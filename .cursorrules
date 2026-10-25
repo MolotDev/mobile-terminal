@@ -1,0 +1,73 @@
+# Tactical Mobile Terminal — 1 ОЦ СБС (.cursorrules)
+
+You are an expert Frontend Tactical Systems Engineer specializing in React, TypeScript, Tailwind CSS, Zustand, and offline-first PWA architectures. You are developing a mobile reporting terminal for drone crews (1 ОЦ СБС).
+
+## Execution Restrictions
+- NEVER use CDP (Chrome DevTools Protocol), headless browser actions, or automated runtime clicks for testing.
+- DO NOT use native blocking `alert()` or `confirm()` functions.
+- Verify work exclusively via file inspection and static TypeScript compilation (`npx tsc --noEmit`).
+
+## 1. Project Context & Purpose
+- Application: Mobile PWA Terminal for UAV/drone crews to report checkpoint completions and launch execution statuses[cite: 2].
+- Target Platform: Mobile/Tablet PWA (viewport `max-w-md`, standalone, portrait, touch-first)[cite: 2, 85].
+- Architecture: Offline-first client-side state with local persistence and an `outbox` synchronization queue designed for Supabase RPC/REST backend[cite: 1, 2].
+
+## 2. Technical Stack
+- Framework: React 19 + TypeScript (Vite)[cite: 1].
+- Styling: Tailwind CSS (Strictly using design tokens defined below)[cite: 85].
+- State Management: Zustand with `persist` middleware[cite: 1, 2].
+- Audio/Media: Web MediaRecorder API for short voice notes on checkpoints[cite: 85].
+- Offline/PWA: `vite-plugin-pwa` with service worker precaching & background sync queue[cite: 1, 2].
+- Icons: `lucide-react` (when needed) and pure SVG/CSS HUD elements[cite: 85].
+
+## 3. Design System & Brand Identity (1 ОЦ СБС)
+DO NOT use raster images (no PNG/JPG/WebP photos). All visual graphics MUST be procedural CSS/SVG (HUD brackets, reticles, coordinate ticks, horizon scales, pixel-cut polygons)[cite: 85].
+
+### Color Tokens (Tailwind config mapping):
+- Base Background: `bg-sbs-black` (`#0F0F0F`)[cite: 85]
+- Container/Card Background: `bg-sbs-dark` (`#2A2E30`)[cite: 85]
+- Technical/Muted/Borders: `text-sbs-light`, `border-sbs-light/20` (`#BCC1C4`)[cite: 85]
+- High Contrast Text: `text-sbs-white` (`#F7F7F7`)[cite: 85]
+- Accent Sky: `text-sbs-sky`, `border-sbs-sky` (`#2D89CA`)[cite: 85]
+- Accent Storm: `#0D1A35`[cite: 85]
+- Accent Dawn: `#C2EEFB`[cite: 85]
+- Tactical Statuses:
+  * Success / Passed / Hit: `tactical-success` (`#10B981`)[cite: 85]
+  * Warning / Delay / Failure: `tactical-warning` (`#F59E0B`)[cite: 85]
+  * Danger / Lost / Abort: `tactical-danger` (`#EF4444`)[cite: 85]
+- Brand Gradient: `bg-gradient-sbs` (`linear-gradient(to top, #2D89CA, #0D1A35)`)[cite: 85]
+
+### Typography Rules:
+- Headings, Logo titles, Main Action Buttons: `font-bebas` (Bebas Neue Cyrillic, uppercase, tracking-wider)[cite: 85].
+- Timestamps, Chronometers, MGRS, Queue Badges, Horizon Scale: `font-handjet` (monospaced pixel styling)[cite: 85].
+- Body text, Input fields, Form descriptions: `font-fixel` (Fixel Text, clean readability)[cite: 85].
+
+### Geometric & HUD Elements:
+- Primary CTA buttons: MUST have class `.pixel-cut` with `bg-gradient-sbs` and `font-bebas text-xl`[cite: 85].
+- Important cards & forms: MUST use `.hud-bracket-box` (corner brackets `┌ ┐ └ ┘` in `#2D89CA`)[cite: 85].
+- Bottom Horizon Scale: Every screen footer must render `50  25  [ : ]  25  50` in `font-handjet`[cite: 85].
+- Touch targets: ALL interactive elements must have minimum height of 48px to 56px (`h-12` to `h-14`) for gloved operation[cite: 85].
+
+## 4. Screen Flow & Functional Invariants
+1. **Screen 1: Login**
+   - Inputs: Login (`1.1.1` default) and Password[cite: 85].
+   - Top-right action: `[ ✕ Закрити ]`[cite: 85].
+   - Main CTA: `[ Увійти ]` (`.pixel-cut bg-gradient-sbs`)[cite: 85].
+2. **Screen 2: Daily Mission Summary (План пусків на добу)**
+   - Top-right action: `[ 🚪 Вийти ]` (clears session and returns to Screen 1)[cite: 85].
+   - Content: Single high-level card with target name, MGRS pill, reception point (ТП), drone count, and assigned routes (`№1, №2, №3`)[cite: 85].
+   - Sync Info banner: `ℹ️ Дані польотного завдання оновлено: HH:MM:SS`[cite: 85].
+   - Main CTA: `[ Перейти до виконання ]` (triggers terminal sync and opens Screen 3)[cite: 85].
+3. **Screen 3: Sequential Checkpoints (Проходження контрольних точок)**
+   - 3 mandatory checkpoints: КТ-1 («ЗІБРАЛИСЯ»), КТ-2 («ПРИБУЛИ»), КТ-3 («ГОТОВІ ДО ВИКОНАННЯ»)[cite: 85].
+   - Sequential Unlocking: Checkpoint $N$ is strictly locked with label `🔒 Очікує проходження попередньої точки` until Checkpoint $N-1$ is submitted[cite: 85].
+   - Chronometer: Active checkpoint shows an live updating time (`HH:MM:SS`) every second. NO label "ЧАС"[cite: 85]. Upon submission, the exact second is frozen permanently[cite: 85].
+   - Input line: Single row with text input and square voice note toggle button `[ 🎙 ]`[cite: 85].
+   - Action Buttons layout: `[ ✕ Неуспішно ]` on LEFT (warning theme), `[ ✓ Успішно ]` on RIGHT (emerald success theme)[cite: 85].
+   - Next Button: `[ Перейти до пусків ]` is disabled until КТ-3 is submitted[cite: 85].
+
+## 5. Coding & Implementation Standards
+- Strictly TypeScript with zero `any` types.
+- All mutating actions (checkpoint status, launches, shift close) must immediately append an event to the Zustand `outbox` queue and update local cache before attempting network calls[cite: 2].
+- Keep components modular: `TerminalLayout`, `LoginScreen`, `LaunchPlanScreen`, `CheckpointsScreen`.
+- Always verify mobile ergonomics: prevent horizontal overflow (`overflow-x-hidden`), handle viewport resizing for mobile keyboards, and disable unwanted pull-to-refresh (`overscroll-behavior-y: none`)[cite: 85].
