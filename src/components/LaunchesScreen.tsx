@@ -289,7 +289,7 @@ export function LaunchesScreen() {
           <div className="relative">
             <article
               className={`hud-bracket-box bg-sbs-dark p-4 ${
-                isTransitioning ? 'pointer-events-none select-none blur-[1px]' : ''
+                isTransitioning ? 'pointer-events-none select-none blur-[2px]' : ''
               }`}
             >
               <div className="flex items-center justify-between gap-3">
@@ -422,7 +422,7 @@ export function LaunchesScreen() {
             {isTransitioning ? (
               <p className="pointer-events-none absolute inset-0 flex items-center justify-center">
                 <span className="bg-sbs-black px-4 py-3 font-handjet text-sm tracking-widest text-sbs-sky">
-                  ⏳ ПІДГОТОВКА ІНТЕРФЕЙСУ БОРТУ...
+                  ⏳ СИНХРОНІЗАЦІЯ ДАНИХ ПРО ПУСКИ...
                 </span>
               </p>
             ) : null}
@@ -443,10 +443,10 @@ export function LaunchesScreen() {
                     key={launch.id}
                     className="flex items-center border-b border-sbs-light/10 px-3 py-1.5"
                   >
-                    <span className="w-24 shrink-0 font-handjet text-md text-sbs-light">
+                    <span className="w-24 shrink-0 font-handjet text-md text-sbs-white">
                       {formatFixation(launch.time)}
                     </span>
-                    <span className="flex-1 font-fixel text-sm font-semibold text-sbs-white">
+                    <span className="flex-1 font-fixel text-sm font-semibold text-sbs-light">
                       S.N-{launch.droneNumber} [{launch.trackerNumber ? ' +T ' : ' -T '}]
                     </span>
                     <LaunchSummaryStatus launch={launch} />

@@ -90,3 +90,30 @@ BEGIN
     (v_task_id, v_crew_id, 'asset_voron_01', '106', NULL, NULL, v_target_mgrs, '№2', 'ammo_std_01', 1, 'PLANNED'),
     (v_task_id, v_crew_id, 'asset_voron_01', '112', 'trk_model_std', 'TRK-9004', v_target_mgrs, '№3', 'ammo_std_01', 1, 'PLANNED');
 END $$;
+
+-- 7. ПОЛІТИКИ ДОСТУПУ (RLS) ДЛЯ ТЕРМІНАЛУ (anon)
+ALTER TABLE public.launches ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow anon read launches"
+ON public.launches FOR SELECT
+TO anon
+USING (true);
+
+CREATE POLICY "Allow anon update launches"
+ON public.launches FOR UPDATE
+TO anon
+USING (true)
+WITH CHECK (true);
+
+CREATE POLICY "Allow anon insert launches"
+ON public.launches FOR INSERT
+TO anon
+WITH CHECK (true);
+
+ALTER TABLE public.checkpoint_reports ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow anon all on checkpoint_reports"
+ON public.checkpoint_reports FOR ALL
+TO anon
+USING (true)
+WITH CHECK (true);

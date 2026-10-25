@@ -18,6 +18,7 @@ import type {
 
 const DEFAULT_LOGIN = '1.1.1'
 const STORAGE_KEY = 'crew-terminal'
+let syncFollowUp = false
 
 const DEFAULT_MISSION: MissionPlan = {
   target: 'Склад',
@@ -224,9 +225,14 @@ export const useCrewStore = create<CrewState>()(
           if (onSummary) set({ shiftSummary: result })
           return result
         }
-        if (get().outbox.length === 0 || get().isSyncing) {
-          set({ isOnline: true })
+        if (get().isSyncing) {
+          syncFollowUp = true
           return get().shiftSummary ?? summary(0, pendingReports(get().outbox), false)
+        }
+        if (get().outbox.length === 0) {
+          set({ isOnline: true })
+          await get().loadPlanFromRemote()
+          return get().shiftSummary ?? summary(0, 0, false)
         }
 
         const queuedReports = pendingReports(get().outbox)
@@ -248,6 +254,7 @@ export const useCrewStore = create<CrewState>()(
           const sentCount = onSummary ? (get().shiftSummary?.sentCount ?? 0) + batchSent : batchSent
           const result = summary(sentCount, pendingCount, false)
           if (get().currentScreen === 6) set({ shiftSummary: result })
+          await get().loadPlanFromRemote()
           return result
         } catch {
           const result = summary(
@@ -259,6 +266,10 @@ export const useCrewStore = create<CrewState>()(
           return result
         } finally {
           set({ isSyncing: false })
+          if (syncFollowUp) {
+            syncFollowUp = false
+            void get().triggerSync()
+          }
         }
       },
       loadPlanFromRemote: async () => {
@@ -323,6 +334,7 @@ export const useCrewStore = create<CrewState>()(
             outbox: [...state.outbox, event],
           }
         })
+        await get().triggerSync()
       },
       updateLaunchTracker: (launchId, newTracker) =>
         set((state) => {
@@ -375,6 +387,7 @@ export const useCrewStore = create<CrewState>()(
             launchId: current.id,
             orderNumber: current.orderNumber,
             routeId: current.routeId,
+            droneNumber: current.droneNumber,
             trackerNumber: current.trackerNumber,
             status,
             description,
@@ -389,8 +402,9 @@ export const useCrewStore = create<CrewState>()(
             outbox: [...state.outbox, event],
           }
         })
+        await get().triggerSync()
       },
-      confirmLaunches: () =>
+      confirmLaunches: async () => {
         set((state) => {
           const event: LaunchesConfirmedOutboxEvent = {
             id: crypto.randomUUID(),
@@ -399,7 +413,9 @@ export const useCrewStore = create<CrewState>()(
             time: new Date().toISOString(),
           }
           return { outbox: [...state.outbox, event] }
-        }),
+        })
+        await get().triggerSync()
+      },
       closeShift: async () => {
         set((state) => {
           const queuedCheckpointIds = new Set(

@@ -22,3 +22,6 @@ FOR UPDATE
 TO anon, authenticated
 USING (true)
 WITH CHECK (true);
+
+GRANT SELECT, UPDATE ON public.launches TO anon, authenticated;
+GRANT INSERT ON public.checkpoint_reports TO anon, authenticated;

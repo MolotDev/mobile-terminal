@@ -122,8 +122,7 @@ async function deliverEvent(event: CrewOutboxItem): Promise<boolean> {
   if (!supabase) return false
 
   if (isCheckpointReport(event)) {
-    const audioUrl = await publishedAudioUrl(event)
-    if (hasAudio(event) && !audioUrl) return false
+    const audioUrl = await publishedAudioUrl(event).catch(() => null)
 
     const { error } = await supabase.from('checkpoint_reports').insert({
       id: event.id,
@@ -142,22 +141,9 @@ async function deliverEvent(event: CrewOutboxItem): Promise<boolean> {
   }
 
   if (isLaunchReport(event)) {
-    const audioUrl = await publishedAudioUrl(event)
-    if (hasAudio(event) && !audioUrl) return false
-
-    const { error } = await supabase
-      .from('launches')
-      .update({
-        execution_status: event.status,
-        actual_launch_time: event.time,
-        comments: event.description,
-        tracker_model_serial_number: event.trackerNumber,
-        reported_at: new Date().toISOString(),
-        audio_url: audioUrl,
-      })
-      .eq('id', event.launchId)
-
-    if (error) return false
+    const audioUrl = await publishedAudioUrl(event).catch(() => null)
+    const saved = await updateLaunchReport(event, audioUrl)
+    if (!saved) return false
     await clearStoredAudio(event.audioKey)
     return true
   }
@@ -165,8 +151,39 @@ async function deliverEvent(event: CrewOutboxItem): Promise<boolean> {
   return true
 }
 
-function hasAudio(event: OutboxEvent | LaunchOutboxEvent): boolean {
-  return Boolean(event.audioKey || event.audioBlob)
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+}
+
+async function updateLaunchReport(event: LaunchOutboxEvent, audioUrl: string | null): Promise<boolean> {
+  if (!supabase) return false
+
+  const payload = {
+    execution_status: event.status,
+    actual_launch_time: event.time,
+    comments: event.description,
+    tracker_model_serial_number: event.trackerNumber,
+    reported_at: new Date().toISOString(),
+    audio_url: audioUrl,
+  }
+
+  if (isUuid(event.launchId)) {
+    const byId = await supabase.from('launches').update(payload).eq('id', event.launchId).select('id')
+    if (!byId.error && Array.isArray(byId.data) && byId.data.length > 0) return true
+  }
+
+  const serial = event.droneNumber
+  if (!serial) return false
+  const crews = event.login.startsWith('crew_')
+    ? [event.login]
+    : [event.login, `crew_${event.login}`]
+  const bySerial = await supabase
+    .from('launches')
+    .update(payload)
+    .eq('asset_serial_number', serial)
+    .in('battle_group_id', crews)
+    .select('id')
+  return !bySerial.error && Array.isArray(bySerial.data) && bySerial.data.length > 0
 }
 
 async function publishedAudioUrl(event: OutboxEvent | LaunchOutboxEvent): Promise<string | null> {

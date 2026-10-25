@@ -58,6 +58,7 @@ export interface LaunchOutboxEvent {
   launchId: string
   orderNumber: number
   routeId: string
+  droneNumber: string
   trackerNumber: string | null
   status: LaunchReportStatus
   description: string
@@ -125,7 +126,7 @@ export interface CrewState {
     description: string,
     audioBlob: Blob | null,
   ) => Promise<void>
-  confirmLaunches: () => void
+  confirmLaunches: () => Promise<void>
   closeShift: () => Promise<void>
   resetSession: () => void
 }
