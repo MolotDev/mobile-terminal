@@ -12,16 +12,6 @@ import type { Launch } from '../types/mission.ts'
 
 const VOICE_BUCKET = 'tactical-voice'
 
-export interface DailyPlan {
-  id: string
-  crewId: string
-  planDate: string
-  target: string | null
-  mgrs: string | null
-  address: string | null
-  launches: LaunchItem[]
-}
-
 export async function uploadAudio(key: string, blob: Blob, path: string): Promise<string | null> {
   if (!supabase || key === '') return null
 
@@ -108,22 +98,6 @@ export function toLaunchItem(launch: Launch, index: number): LaunchItem | null {
     comment: launch.comments || '',
     audioBlob: null,
   }
-}
-
-export async function fetchDailyPlan(crewId: string): Promise<DailyPlan | null> {
-  if (!supabase) return null
-
-  const { data, error } = await supabase
-    .from('daily_plans')
-    .select('id, crew_id, plan_date, target, mgrs, address, launches')
-    .eq('crew_id', crewId)
-    .eq('plan_date', currentPlanDate())
-    .limit(1)
-
-  if (error || !data) return null
-
-  const row = Array.isArray(data) ? data[0] : data
-  return parseDailyPlan(row)
 }
 
 async function deliverEvent(event: CrewOutboxItem): Promise<boolean> {
@@ -313,70 +287,6 @@ function blobFromDataUrl(dataUrl: string): Blob | null {
   }
 }
 
-function currentPlanDate(): string {
-  const now = new Date()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  return `${now.getFullYear()}-${month}-${day}`
-}
-
-function parseDailyPlan(row: unknown): DailyPlan | null {
-  if (!isRecord(row)) return null
-  if (typeof row.id !== 'string' || typeof row.crew_id !== 'string') return null
-  if (typeof row.plan_date !== 'string') return null
-
-  return {
-    id: row.id,
-    crewId: row.crew_id,
-    planDate: row.plan_date,
-    target: typeof row.target === 'string' ? row.target : null,
-    mgrs: typeof row.mgrs === 'string' ? row.mgrs : null,
-    address: typeof row.address === 'string' ? row.address : null,
-    launches: parseLaunches(row.launches),
-  }
-}
-
-function parseLaunches(value: unknown): LaunchItem[] {
-  if (!Array.isArray(value)) return []
-
-  return value.flatMap((item, index) => {
-    const launch = parseLaunch(item, index)
-    return launch ? [launch] : []
-  })
-}
-
-function parseLaunch(value: unknown, index: number): LaunchItem | null {
-  if (!isRecord(value)) return null
-
-  const droneName = readString(value, 'droneName', 'drone_name') ?? 'Ворон'
-  const droneNumber = readNumber(value, 'droneNumber', 'drone_number')
-  const serial = readString(value, 'droneNumber', 'drone_number', 'asset_serial_number')
-  if (!serial && droneNumber === null) return null
-
-  const id = readString(value, 'id') ?? String(index + 1)
-  const tracker = readString(value, 'trackerNumber', 'tracker_number')
-  const route = readString(value, 'routeId', 'route_id', 'trajectory_name')
-
-  return {
-    id,
-    taskId: readString(value, 'taskId', 'task_id') ?? '',
-    battleGroupId: readString(value, 'battleGroupId', 'battle_group_id') ?? '',
-    orderNumber: readNumber(value, 'orderNumber', 'order_number') ?? index + 1,
-    routeId: route ?? `№${index + 1}`,
-    droneName,
-    droneNumber: serial ?? String(droneNumber),
-    trackerNumber: tracker ?? '',
-    targetMgrs: readString(value, 'targetMgrs', 'aiming_point_mgrs') ?? '',
-    status: readLaunchStatus(value.status ?? value.execution_status),
-    time: typeof value.time === 'string' ? value.time : typeof value.actual_launch_time === 'string' ? value.actual_launch_time : null,
-    fixedTime: typeof value.fixedTime === 'string' ? value.fixedTime : typeof value.actual_launch_time === 'string' ? value.actual_launch_time : null,
-    wasPostponed: value.wasPostponed === true || value.was_postponed === true,
-    description: typeof value.description === 'string' ? value.description : typeof value.comments === 'string' ? value.comments : '',
-    comment: typeof value.comment === 'string' ? value.comment : typeof value.comments === 'string' ? value.comments : '',
-    audioBlob: typeof value.audioBlob === 'string' ? value.audioBlob : null,
-  }
-}
-
 function readString(record: Record<string, unknown>, ...keys: string[]): string | null {
   for (const key of keys) {
     const value = record[key]
@@ -436,7 +346,6 @@ function parseRemoteLaunch(value: unknown): Launch | null {
     actual_launch_time: readString(value, 'actual_launch_time'),
     execution_status: readString(value, 'execution_status'),
     bda_result: readString(value, 'bda_result'),
-    audio_url: readString(value, 'audio_url'),
   }
 }
 

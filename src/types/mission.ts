@@ -23,5 +23,4 @@ export interface Launch {
   actual_launch_time: string | null
   execution_status: string | null
   bda_result: string | null
-  audio_url: string | null
 }

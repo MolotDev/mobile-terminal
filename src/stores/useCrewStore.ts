@@ -222,7 +222,6 @@ export const useCrewStore = create<CrewState>()(
         }
         if (get().outbox.length === 0) {
           set({ isOnline: true })
-          await get().loadPlanFromRemote()
           return get().shiftSummary ?? summary(0, 0, false)
         }
 
@@ -245,7 +244,6 @@ export const useCrewStore = create<CrewState>()(
           const sentCount = onSummary ? (get().shiftSummary?.sentCount ?? 0) + batchSent : batchSent
           const result = summary(sentCount, pendingCount, false)
           if (get().currentScreen === 6) set({ shiftSummary: result })
-          await get().loadPlanFromRemote()
           return result
         } catch {
           const result = summary(
