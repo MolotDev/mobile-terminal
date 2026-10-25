@@ -10,6 +10,7 @@ export function CheckpointsScreen() {
   const currentScreen = useCrewStore((state) => state.currentScreen)
   const submitCheckpoint = useCrewStore((state) => state.submitCheckpoint)
   const closeShift = useCrewStore((state) => state.closeShift)
+  const launchSyncNotice = useCrewStore((state) => state.launchSyncNotice)
   const setScreen = useCrewStore((state) => state.setScreen)
   const [description, setDescription] = useState('')
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
@@ -137,6 +138,16 @@ export function CheckpointsScreen() {
       >
         {returning ? 'Повернення · Контрольні точки' : 'Контрольні точки'}
       </h1>
+      {returning && launchSyncNotice === 'synced' ? (
+        <p className="border border-tactical-success/40 bg-sbs-dark px-3 py-3 text-sm text-tactical-success" role="status">
+          Дані про пуски синхронізовано успішно
+        </p>
+      ) : null}
+      {returning && launchSyncNotice === 'queued' ? (
+        <p className="border border-sbs-sky/40 bg-sbs-dark px-3 py-3 text-sm text-sbs-sky" role="status">
+          Дані про пуски готові для збереження. Очікую підключення до мережі.
+        </p>
+      ) : null}
       <ol className="flex flex-col gap-3">
         {routePoints.map((point, index) => (
           <CheckpointCard

@@ -25,6 +25,8 @@ export interface ShiftSummary {
   offline: boolean
 }
 
+export type LaunchSyncNotice = 'synced' | 'queued'
+
 export interface LaunchItem {
   id: string
   orderNumber: number
@@ -107,6 +109,7 @@ export interface CrewState {
   launches: LaunchItem[]
   activeLaunch: LaunchItem | null
   shiftSummary: ShiftSummary | null
+  launchSyncNotice: LaunchSyncNotice | null
   setScreen: (screen: ScreenId) => void
   setLogin: (login: string) => void
   setOnlineStatus: (isOnline: boolean) => void

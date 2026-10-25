@@ -100,7 +100,6 @@ export function LaunchesScreen() {
   const updateLaunchTracker = useCrewStore((state) => state.updateLaunchTracker)
   const submitLaunch = useCrewStore((state) => state.submitLaunch)
   const confirmLaunches = useCrewStore((state) => state.confirmLaunches)
-  const setScreen = useCrewStore((state) => state.setScreen)
   const [query, setQuery] = useState('')
   const [description, setDescription] = useState('')
   const [trackerDraft, setTrackerDraft] = useState('')
@@ -485,8 +484,7 @@ export function LaunchesScreen() {
         <button
           type="button"
           onClick={() => {
-            confirmLaunches()
-            setScreen(5)
+            void confirmLaunches()
           }}
           className="pixel-cut flex h-[56px] max-h-[56px] min-h-[56px] items-center justify-center overflow-hidden bg-gradient-sbs px-3 py-0 font-bebas text-xl leading-none tracking-wider text-sbs-white"
         >

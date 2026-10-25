@@ -8,8 +8,8 @@ import type {
   CrewState,
   LaunchItem,
   LaunchOutboxEvent,
-  LaunchesConfirmedOutboxEvent,
   MissionPlan,
+  LaunchSyncNotice,
   OutboxEvent,
   ScreenId,
   ShiftClosedOutboxEvent,
@@ -118,6 +118,30 @@ function alignCheckpoints(stored: Checkpoint[]): Checkpoint[] {
   })
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+}
+
+async function resolveReportedLaunch(
+  get: () => { launches: LaunchItem[]; loadPlanFromRemote: () => Promise<void> },
+  launchId: string,
+  reported: boolean,
+): Promise<LaunchItem | null> {
+  const current = get().launches.find((launch) => launch.id === launchId) ?? null
+  if (!current || !reported || isUuid(current.id)) return current
+
+  const orderNumber = current.orderNumber
+  const droneNumber = current.droneNumber
+  await get().loadPlanFromRemote()
+  const launches = get().launches
+  return (
+    launches.find((launch) => launch.id === launchId) ??
+    launches.find((launch) => isUuid(launch.id) && launch.droneNumber === droneNumber) ??
+    launches.find((launch) => isUuid(launch.id) && launch.orderNumber === orderNumber) ??
+    current
+  )
+}
+
 function formatClock(date: Date): string {
   const hours = String(date.getHours()).padStart(2, '0')
   const minutes = String(date.getMinutes()).padStart(2, '0')
@@ -138,7 +162,12 @@ async function storeVoice(blob: Blob | null): Promise<{ audioKey: string | null;
   if (!blob) return { audioKey: null, playback }
   const audioKey = crypto.randomUUID()
   try {
-    await putAudio(audioKey, blob)
+    await Promise.race([
+      putAudio(audioKey, blob),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('audio-timeout')), 2000)
+      }),
+    ])
     return { audioKey, playback }
   } catch {
     return { audioKey: null, playback }
@@ -208,6 +237,7 @@ export const useCrewStore = create<CrewState>()(
       isOnline: typeof navigator === 'undefined' ? true : navigator.onLine,
       isSyncing: false,
       shiftSummary: null,
+      launchSyncNotice: null,
       setScreen: (screen: ScreenId) => set({ currentScreen: screen }),
       setLogin: (login: string) => set({ login }),
       setOnlineStatus: (isOnline: boolean) => set({ isOnline }),
@@ -349,30 +379,33 @@ export const useCrewStore = create<CrewState>()(
           }
         }),
       submitLaunch: async (launchId, status, description, audioBlob) => {
-        if (!get().launches.some((launch) => launch.id === launchId)) return
+        const reported = status === 'SUCCESS' || status === 'FAILED'
+        const target = await resolveReportedLaunch(get, launchId, reported)
+        if (!target) return
 
         const voice = await storeVoice(audioBlob)
         const reportedAt = new Date()
         const time = reportedAt.toISOString()
         const actualLaunchTime = formatClock(reportedAt)
+        const playback = voice.playback && voice.playback.length < 180000 ? voice.playback : null
 
+        let queued = false
         set((state) => {
-          const current = state.launches.find((launch) => launch.id === launchId)
+          const current = state.launches.find((launch) => launch.id === target.id)
           if (!current) return state
 
-          const reported = status === 'SUCCESS' || status === 'FAILED'
           const next: LaunchItem = {
             ...current,
             status,
             description,
-            audioBlob: voice.playback,
+            audioBlob: playback,
             time: reported ? time : current.time,
             wasPostponed: status === 'POSTPONED' || current.wasPostponed,
           }
           const launches =
             status === 'POSTPONED'
-              ? [...state.launches.filter((launch) => launch.id !== launchId), next]
-              : state.launches.map((launch) => (launch.id === launchId ? next : launch))
+              ? [...state.launches.filter((launch) => launch.id !== target.id), next]
+              : state.launches.map((launch) => (launch.id === target.id ? next : launch))
 
           if (!reported) {
             return {
@@ -391,10 +424,11 @@ export const useCrewStore = create<CrewState>()(
             trackerNumber: current.trackerNumber,
             status,
             description,
-            audioBlob: voice.audioKey ? null : voice.playback,
+            audioBlob: voice.audioKey ? null : playback,
             audioKey: voice.audioKey,
             time: actualLaunchTime,
           }
+          queued = true
 
           return {
             launches,
@@ -402,19 +436,18 @@ export const useCrewStore = create<CrewState>()(
             outbox: [...state.outbox, event],
           }
         })
-        await get().triggerSync()
+        if (queued) await get().triggerSync()
       },
       confirmLaunches: async () => {
-        set((state) => {
-          const event: LaunchesConfirmedOutboxEvent = {
-            id: crypto.randomUUID(),
-            login: state.login,
-            kind: 'LAUNCHES_CONFIRMED',
-            time: new Date().toISOString(),
-          }
-          return { outbox: [...state.outbox, event] }
-        })
-        await get().triggerSync()
+        const started = Date.now()
+        while (get().isSyncing && Date.now() - started < 8000) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, 50)
+          })
+        }
+        const queued = get().outbox.some((item) => 'launchId' in item)
+        const launchSyncNotice: LaunchSyncNotice = queued ? 'queued' : 'synced'
+        set({ launchSyncNotice, currentScreen: 5 })
       },
       closeShift: async () => {
         set((state) => {
@@ -463,7 +496,13 @@ export const useCrewStore = create<CrewState>()(
         const shiftSummary = await get().triggerSync()
         set({ currentScreen: 6, shiftSummary })
       },
-      resetSession: () => set({ ...createSessionState(), isSyncing: false, shiftSummary: null }),
+      resetSession: () =>
+        set({
+          ...createSessionState(),
+          isSyncing: false,
+          shiftSummary: null,
+          launchSyncNotice: null,
+        }),
     }),
     {
       name: STORAGE_KEY,
@@ -477,6 +516,7 @@ export const useCrewStore = create<CrewState>()(
         checkpoints: state.checkpoints,
         launches: state.launches,
         shiftSummary: state.shiftSummary,
+        launchSyncNotice: state.launchSyncNotice,
       }),
       onRehydrateStorage: () => (state) => {
         if (typeof navigator !== 'undefined') {
