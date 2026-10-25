@@ -91,6 +91,7 @@ export interface MissionPlan {
   address: string
   mgrs: string
   reception: string
+  receptionLabel: string
 }
 
 export interface CrewState {

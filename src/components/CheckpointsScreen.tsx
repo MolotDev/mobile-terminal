@@ -190,7 +190,7 @@ export function CheckpointsScreen() {
               : 'mt-auto flex h-14 min-h-14 max-h-14 cursor-not-allowed items-center justify-center overflow-hidden border border-sbs-light/10 bg-sbs-dark/40 px-3 py-0 font-bebas text-xl leading-none tracking-wider text-sbs-light/30'
           }
         >
-          Перейти до пусків
+          Звітувати про пуски
         </button>
       )}
     </section>
@@ -264,7 +264,6 @@ function CheckpointCard({
               value={description}
               onChange={(event) => onDescription(event.target.value)}
               aria-label="Примітка"
-              autoFocus
               className="h-12 min-w-0 flex-1 bg-sbs-black px-3 font-fixel text-sbs-white outline-none ring-sbs-sky focus:ring-1"
             />
             <button

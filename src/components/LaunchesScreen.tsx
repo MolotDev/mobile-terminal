@@ -208,6 +208,7 @@ export function LaunchesScreen() {
     if (!shown || isTransitioning) return
     if (status !== 'SUCCESS' && status !== 'FAILED' && status !== 'POSTPONED') return
     if (!shown.trackerNumber) commitTracker()
+    setQuery('')
     const result: LastResult = {
       orderNumber: shown.orderNumber,
       droneName: shown.droneName,
@@ -254,7 +255,7 @@ export function LaunchesScreen() {
         </article>
       ) : null}
       <div className="flex flex-col gap-2">
-        {finished ? null : (
+        {finished && !isTransitioning ? null : (
           <label className="search-field flex h-12 items-center gap-2 bg-sbs-dark px-3">
             <SearchCheckIcon size={18} className="shrink-0 text-sbs-light" aria-hidden="true" />
             <input

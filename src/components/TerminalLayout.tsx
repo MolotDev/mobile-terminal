@@ -2,32 +2,18 @@ import { CalendarIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useCrewStore } from '../stores/useCrewStore.ts'
-import { LoginCloseButton } from './LoginScreen.tsx'
 import { NetworkBadge, ScreenHeader } from './ScreenHeader.tsx'
 
-export function TerminalLayout({
-  children,
-  onSessionReset,
-}: {
-  children: ReactNode
-  onSessionReset?: () => void
-}) {
+export function TerminalLayout({ children }: { children: ReactNode }) {
   const currentScreen = useCrewStore((state) => state.currentScreen)
   const isOnline = useCrewStore((state) => state.isOnline)
   const queueCount = useCrewStore((state) => state.outbox.length)
-  const resetSession = useCrewStore((state) => state.resetSession)
-
-  function handleClose() {
-    resetSession()
-    onSessionReset?.()
-  }
 
   return (
     <div className="mx-auto flex h-screen min-h-screen w-full max-w-md flex-col overflow-hidden border-x border-sbs-light/10 bg-sbs-black">
       {currentScreen === 1 ? (
-        <header className="flex items-center justify-end gap-3 border-b border-sbs-light/10 px-4 py-3">
+        <header className="flex items-center justify-center border-b border-sbs-light/10 px-4 py-3">
           <NetworkBadge isOnline={isOnline} queueCount={queueCount} />
-          <LoginCloseButton onClose={handleClose} />
         </header>
       ) : (
         <ScreenHeader />

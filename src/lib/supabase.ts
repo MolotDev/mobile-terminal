@@ -1,6 +1,10 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim() ?? ''
+function projectUrl(value: string | undefined): string {
+  return (value ?? '').trim().replace(/\/+$/, '').replace(/\/rest\/v1$/, '')
+}
+
+const supabaseUrl = projectUrl(import.meta.env.VITE_SUPABASE_URL)
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() ?? ''
 
 const PLACEHOLDER_URL = 'your_project_url'
@@ -14,4 +18,4 @@ export const isDemoMode =
 
 export const supabase: SupabaseClient | null = isDemoMode
   ? null
-  : createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY)
+  : createClient(supabaseUrl, supabaseAnonKey)

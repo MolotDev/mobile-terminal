@@ -24,6 +24,7 @@ const DEFAULT_MISSION: MissionPlan = {
   address: 'північна промзона, ангар 2',
   mgrs: '36U EV 45210 88320',
   reception: 'Пункт приймання',
+  receptionLabel: 'AP-01',
 }
 
 const CHECKPOINT_DEFINITIONS = [
@@ -273,6 +274,7 @@ export const useCrewStore = create<CrewState>()(
             },
             launches,
             activeLaunch: findActiveLaunch(launches),
+            syncTime: formatClock(new Date()),
           }
         })
       },

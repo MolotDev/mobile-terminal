@@ -15,27 +15,27 @@ export function ScreenHeader() {
   const resetSession = useCrewStore((state) => state.resetSession)
 
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-sbs-light/10 px-4 py-3">
+    <header className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 border-b border-sbs-light/10 px-4 py-3">
       <div className="flex min-w-0 items-center gap-2">
-        <button
-          type="button"
-          disabled={currentScreen === 6}
-          onClick={() => {
-            if (currentScreen === 6) return
-            setScreen(currentScreen === 5 ? 4 : currentScreen === 4 ? 3 : currentScreen === 3 ? 2 : 1)
-          }}
-          aria-label="Назад"
-          className="flex h-12 min-h-12 max-h-12 w-12 shrink-0 items-center justify-center border border-sbs-light/30 font-bebas text-lg text-sbs-white"
-        >
-          ←
-        </button>
+        {currentScreen === 2 || currentScreen === 6 ? null : (
+          <button
+            type="button"
+            onClick={() => {
+              setScreen(currentScreen === 5 ? 4 : currentScreen === 4 ? 3 : currentScreen === 3 ? 2 : 1)
+            }}
+            aria-label="Назад"
+            className="flex h-12 min-h-12 max-h-12 w-12 shrink-0 items-center justify-center border border-sbs-light/30 font-bebas text-lg text-sbs-white"
+          >
+            ←
+          </button>
+        )}
         <div className="flex min-w-0 items-center gap-2 font-bebas text-xl tracking-wider text-sbs-white">
           <UsersIcon size={20} className="shrink-0" aria-hidden="true" />
           <span className="truncate">· {crewLabel(login)}</span>
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <NetworkBadge isOnline={isOnline} queueCount={queueCount} />
+      <NetworkBadge isOnline={isOnline} queueCount={queueCount} />
+      <div className="flex justify-end">
         <button
           type="button"
           onClick={resetSession}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { CheckpointsScreen } from './components/CheckpointsScreen.tsx'
 import { LaunchesScreen } from './components/LaunchesScreen.tsx'
 import { LaunchPlanScreen } from './components/LaunchPlanScreen.tsx'
@@ -10,7 +10,6 @@ import { useCrewStore } from './stores/useCrewStore.ts'
 export default function App() {
   const currentScreen = useCrewStore((state) => state.currentScreen)
   const setOnlineStatus = useCrewStore((state) => state.setOnlineStatus)
-  const [formEpoch, setFormEpoch] = useState(0)
 
   useEffect(() => {
     const onOnline = () => {
@@ -33,8 +32,8 @@ export default function App() {
   }, [setOnlineStatus])
 
   return (
-    <TerminalLayout onSessionReset={() => setFormEpoch((epoch) => epoch + 1)}>
-      {currentScreen === 1 ? <LoginScreen key={formEpoch} /> : null}
+    <TerminalLayout>
+      {currentScreen === 1 ? <LoginScreen /> : null}
       {currentScreen === 2 ? <LaunchPlanScreen /> : null}
       {currentScreen === 3 || currentScreen === 5 ? <CheckpointsScreen /> : null}
       {currentScreen === 4 ? <LaunchesScreen /> : null}

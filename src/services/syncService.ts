@@ -41,10 +41,10 @@ export async function syncOutbox(outboxItems: CrewOutboxItem[]): Promise<string[
   for (const event of outboxItems) {
     try {
       const delivered = await deliverEvent(event)
-      if (!delivered) break
+      if (!delivered) continue
       sent.push(event.id)
     } catch {
-      break
+      continue
     }
   }
 
@@ -57,6 +57,13 @@ export interface ActiveMission {
 }
 
 export async function fetchActiveMission(crewId: string): Promise<ActiveMission | null> {
+  const primary = await readActiveMission(crewId)
+  if (primary && primary.launches.length > 0) return primary
+  if (crewId.startsWith('crew_')) return primary
+  return readActiveMission(`crew_${crewId}`)
+}
+
+async function readActiveMission(crewId: string): Promise<ActiveMission | null> {
   if (!supabase) return null
 
   const { data, error } = await supabase

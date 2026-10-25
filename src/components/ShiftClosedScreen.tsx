@@ -2,10 +2,9 @@ import { useCrewStore } from '../stores/useCrewStore.ts'
 
 export function ShiftClosedScreen() {
   const shiftSummary = useCrewStore((state) => state.shiftSummary)
+  const isOnline = useCrewStore((state) => state.isOnline)
   const resetSession = useCrewStore((state) => state.resetSession)
   const sentCount = shiftSummary?.sentCount ?? 0
-  const heldLocally =
-    shiftSummary === null || shiftSummary.offline || shiftSummary.pendingCount > 0
 
   return (
     <section className="flex flex-col gap-4">
@@ -14,13 +13,13 @@ export function ShiftClosedScreen() {
         <p className="font-fixel text-sbs-white">Відправлено звітів: {sentCount}</p>
         <p
           className={
-            heldLocally
-              ? 'font-handjet text-sm tracking-wider text-tactical-warning'
-              : 'font-handjet text-sm tracking-wider text-tactical-success'
+            isOnline
+              ? 'font-handjet text-sm tracking-wider text-tactical-success'
+              : 'font-handjet text-sm tracking-wider text-tactical-warning'
           }
           role="status"
         >
-          {heldLocally ? "Дані збережено локально, очікується зв'язок" : 'ONLINE'}
+          {isOnline ? 'ONLINE' : "Дані збережено локально, очікується зв'язок"}
         </p>
       </div>
       <button
