@@ -207,6 +207,12 @@ export function LaunchesScreen() {
     if (!shown || isTransitioning) return
     if (status !== 'SUCCESS' && status !== 'FAILED' && status !== 'POSTPONED') return
     if (!shown.trackerNumber) commitTracker()
+    if (
+      (status === 'SUCCESS' || status === 'FAILED') &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(shown.id)
+    ) {
+      console.error('Invalid launch ID for update:', shown.id)
+    }
     setQuery('')
     const result: LastResult = {
       orderNumber: shown.orderNumber,

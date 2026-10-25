@@ -76,7 +76,8 @@ async function readActiveMission(crewId: string): Promise<ActiveMission | null> 
 
   const launches = data.flatMap((row, index) => {
     const launch = parseRemoteLaunch(row)
-    return launch ? [toLaunchItem(launch, index)] : []
+    const item = launch ? toLaunchItem(launch, index) : null
+    return item ? [item] : []
   })
   const mgrs = data.flatMap((row) => {
     const launch = parseRemoteLaunch(row)
@@ -86,7 +87,8 @@ async function readActiveMission(crewId: string): Promise<ActiveMission | null> 
   return { launches, mgrs }
 }
 
-export function toLaunchItem(launch: Launch, index: number): LaunchItem {
+export function toLaunchItem(launch: Launch, index: number): LaunchItem | null {
+  if (!isUuid(launch.id)) return null
   return {
     id: launch.id,
     orderNumber: index + 1,
@@ -141,8 +143,7 @@ async function deliverEvent(event: CrewOutboxItem): Promise<boolean> {
   }
 
   if (isLaunchReport(event)) {
-    const audioUrl = await withTimeout(publishedAudioUrl(event).catch(() => null), 8000, null)
-    const saved = await withTimeout(updateLaunchReport(event, audioUrl), 12000, false)
+    const saved = await updateLaunchReport(event)
     if (!saved) return false
     await clearStoredAudio(event.audioKey)
     return true
@@ -155,83 +156,26 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(fallback), ms)
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      () => {
-        clearTimeout(timer)
-        resolve(fallback)
-      },
-    )
-  })
-}
-
-function missingAudioColumn(error: { code?: string; message?: string } | null): boolean {
-  if (!error) return false
-  return error.code === 'PGRST204' || (error.message ?? '').includes('audio_url')
-}
-
-function launchUpdated(result: { data: unknown; error: { code?: string; message?: string } | null }): boolean {
-  return !result.error && Array.isArray(result.data) && result.data.length > 0
-}
-
-async function updateLaunchReport(event: LaunchOutboxEvent, audioUrl: string | null): Promise<boolean> {
+async function updateLaunchReport(event: LaunchOutboxEvent): Promise<boolean> {
   if (!supabase) return false
-
-  const reportedAt = new Date().toISOString()
-  const base = {
-    execution_status: event.status,
-    actual_launch_time: event.time,
-    comments: event.description,
-    tracker_model_serial_number: event.trackerNumber,
-    reported_at: reportedAt,
-  }
-  const crews = event.login.startsWith('crew_')
-    ? [event.login]
-    : [event.login, `crew_${event.login}`]
-
-  const saved = await writeLaunchUpdate(event, crews, { ...base, audio_url: audioUrl })
-  if (saved === true) return true
-  if (saved !== 'retry') return false
-  return (await writeLaunchUpdate(event, crews, base)) === true
-}
-
-async function writeLaunchUpdate(
-  event: LaunchOutboxEvent,
-  crews: string[],
-  payload: {
-    execution_status: string
-    actual_launch_time: string
-    comments: string
-    tracker_model_serial_number: string | null
-    reported_at: string
-    audio_url?: string | null
-  },
-): Promise<boolean | 'retry'> {
-  if (!supabase) return false
-
-  if (isUuid(event.launchId)) {
-    const byId = await supabase.from('launches').update(payload).eq('id', event.launchId).select('id')
-    if (launchUpdated(byId)) return true
-    if (missingAudioColumn(byId.error)) return 'retry'
+  if (!isUuid(event.launchId)) {
+    console.error('Invalid launch ID for update:', event.launchId)
+    return false
   }
 
-  const serial = event.droneNumber
-  if (!serial) return false
-  const bySerial = await supabase
+  const { data, error } = await supabase
     .from('launches')
-    .update(payload)
-    .eq('asset_serial_number', serial)
-    .in('battle_group_id', crews)
-    .select('id')
-  if (launchUpdated(bySerial)) return true
-  if (missingAudioColumn(bySerial.error)) return 'retry'
-  return false
+    .update({
+      execution_status: event.status,
+      actual_launch_time: event.time,
+      comments: event.description || '',
+      tracker_model_serial_number: event.trackerNumber || null,
+      reported_at: new Date().toISOString(),
+    })
+    .eq('id', event.launchId)
+    .select()
+
+  return !error && Array.isArray(data) && data.length > 0
 }
 
 async function publishedAudioUrl(event: OutboxEvent | LaunchOutboxEvent): Promise<string | null> {
