@@ -29,15 +29,20 @@ export type LaunchSyncNotice = 'synced' | 'queued'
 
 export interface LaunchItem {
   id: string
+  taskId: string
+  battleGroupId: string
   orderNumber: number
   routeId: string
   droneName: string
   droneNumber: string
-  trackerNumber: string | null
+  trackerNumber: string
+  targetMgrs: string
   status: LaunchStatus
   time: string | null
+  fixedTime: string | null
   wasPostponed: boolean
   description: string
+  comment: string
   audioBlob: string | null
 }
 
@@ -101,6 +106,7 @@ export interface CrewState {
   currentScreen: ScreenId
   isOnline: boolean
   isSyncing: boolean
+  isLoadingLaunches: boolean
   outbox: CrewOutboxItem[]
   login: string
   syncTime: string | null
@@ -116,6 +122,7 @@ export interface CrewState {
   syncData: () => void
   triggerSync: () => Promise<ShiftSummary>
   loadPlanFromRemote: () => Promise<void>
+  fetchMissionLaunches: (crewId: string) => Promise<void>
   submitCheckpoint: (
     id: number,
     status: SubmittedStatus,

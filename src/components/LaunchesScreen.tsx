@@ -100,6 +100,7 @@ export function LaunchesScreen() {
   const updateLaunchTracker = useCrewStore((state) => state.updateLaunchTracker)
   const submitLaunch = useCrewStore((state) => state.submitLaunch)
   const confirmLaunches = useCrewStore((state) => state.confirmLaunches)
+  const isLoadingLaunches = useCrewStore((state) => state.isLoadingLaunches)
   const [query, setQuery] = useState('')
   const [description, setDescription] = useState('')
   const [trackerDraft, setTrackerDraft] = useState('')
@@ -242,6 +243,26 @@ export function LaunchesScreen() {
       setHeldId(null)
       if (!useCrewStore.getState().activeLaunch) setLastResult(null)
     }, 2000)
+  }
+
+  if (isLoadingLaunches && launches.length === 0) {
+    return (
+      <section className="flex min-h-full flex-1 items-center justify-center">
+        <p className="text-center font-handjet text-lg tracking-wider text-sbs-sky">
+          [ ЗАВАНТАЖЕННЯ БОЙОВОГО НАРЯДУ... ]
+        </p>
+      </section>
+    )
+  }
+
+  if (launches.length === 0) {
+    return (
+      <section className="flex min-h-full flex-1 items-center justify-center">
+        <p className="hud-bracket-box bg-sbs-dark px-4 py-6 text-center font-bebas text-xl tracking-wider text-sbs-white">
+          [ БОЙОВИХ ЗАВДАНЬ ДЛЯ ЕКІПАЖУ НЕ ЗНАЙДЕНО ]
+        </p>
+      </section>
+    )
   }
 
   return (

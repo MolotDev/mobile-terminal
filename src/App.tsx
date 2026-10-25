@@ -12,6 +12,10 @@ export default function App() {
   const setOnlineStatus = useCrewStore((state) => state.setOnlineStatus)
 
   useEffect(() => {
+    void useCrewStore.getState().fetchMissionLaunches(useCrewStore.getState().login)
+  }, [])
+
+  useEffect(() => {
     const onOnline = () => {
       void useCrewStore.getState().triggerSync()
     }

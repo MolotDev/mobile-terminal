@@ -57,13 +57,6 @@ export interface ActiveMission {
 }
 
 export async function fetchActiveMission(crewId: string): Promise<ActiveMission | null> {
-  const primary = await readActiveMission(crewId)
-  if (primary && primary.launches.length > 0) return primary
-  if (crewId.startsWith('crew_')) return primary
-  return readActiveMission(`crew_${crewId}`)
-}
-
-async function readActiveMission(crewId: string): Promise<ActiveMission | null> {
   if (!supabase) return null
 
   const { data, error } = await supabase
@@ -72,17 +65,18 @@ async function readActiveMission(crewId: string): Promise<ActiveMission | null> 
     .eq('battle_group_id', crewId)
     .order('created_at', { ascending: true })
 
-  if (error || !Array.isArray(data)) return null
+  if (error) {
+    console.error('[LOAD ERROR]:', error)
+    return null
+  }
+  if (!Array.isArray(data)) return { launches: [], mgrs: null }
 
   const launches = data.flatMap((row, index) => {
     const launch = parseRemoteLaunch(row)
     const item = launch ? toLaunchItem(launch, index) : null
     return item ? [item] : []
   })
-  const mgrs = data.flatMap((row) => {
-    const launch = parseRemoteLaunch(row)
-    return launch?.aiming_point_mgrs ? [launch.aiming_point_mgrs] : []
-  })[0] ?? null
+  const mgrs = launches.find((launch) => launch.targetMgrs !== '')?.targetMgrs ?? null
 
   return { launches, mgrs }
 }
@@ -91,15 +85,20 @@ export function toLaunchItem(launch: Launch, index: number): LaunchItem | null {
   if (!isUuid(launch.id)) return null
   return {
     id: launch.id,
+    taskId: launch.task_id,
+    battleGroupId: launch.battle_group_id,
     orderNumber: index + 1,
     droneName: 'Ворон',
     droneNumber: launch.asset_serial_number,
     routeId: launch.trajectory_name ?? '№1',
-    trackerNumber: launch.tracker_model_serial_number,
-    status: 'PENDING',
-    time: null,
+    trackerNumber: launch.tracker_model_serial_number || '',
+    targetMgrs: launch.aiming_point_mgrs,
+    status: readLaunchStatus(launch.execution_status),
+    time: launch.actual_launch_time,
+    fixedTime: launch.actual_launch_time,
     wasPostponed: false,
-    description: '',
+    description: launch.comments || '',
+    comment: launch.comments || '',
     audioBlob: null,
   }
 }
@@ -129,6 +128,7 @@ async function deliverEvent(event: CrewOutboxItem): Promise<boolean> {
     const { error } = await supabase.from('checkpoint_reports').insert({
       id: event.id,
       battle_group_id: event.login,
+      checkpoint_id: event.code,
       code: event.code,
       title: event.title || event.code,
       status: event.status,
@@ -156,26 +156,44 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 }
 
-async function updateLaunchReport(event: LaunchOutboxEvent): Promise<boolean> {
-  if (!supabase) return false
-  if (!isUuid(event.launchId)) {
-    console.error('Invalid launch ID for update:', event.launchId)
-    return false
+export async function syncLaunchStatus(
+  launchId: string,
+  payload: {
+    status: 'SUCCESS' | 'FAILED'
+    fixedTime: string
+    comment: string
+    trackerNumber?: string
+  },
+): Promise<{ success: boolean; error: unknown }> {
+  if (!supabase) return { success: false, error: null }
+  if (!isUuid(launchId)) {
+    console.error('Invalid launch ID for update:', launchId)
+    return { success: false, error: null }
   }
 
   const { data, error } = await supabase
     .from('launches')
     .update({
-      execution_status: event.status,
-      actual_launch_time: event.time,
-      comments: event.description || '',
-      tracker_model_serial_number: event.trackerNumber || null,
+      execution_status: payload.status,
+      actual_launch_time: payload.fixedTime,
+      comments: payload.comment || '',
+      tracker_model_serial_number: payload.trackerNumber || null,
       reported_at: new Date().toISOString(),
     })
-    .eq('id', event.launchId)
+    .eq('id', launchId)
     .select()
 
-  return !error && Array.isArray(data) && data.length > 0
+  return { success: !error && Array.isArray(data) && data.length > 0, error }
+}
+
+async function updateLaunchReport(event: LaunchOutboxEvent): Promise<boolean> {
+  const result = await syncLaunchStatus(event.launchId, {
+    status: event.status,
+    fixedTime: event.time,
+    comment: event.description,
+    trackerNumber: event.trackerNumber ?? undefined,
+  })
+  return result.success
 }
 
 async function publishedAudioUrl(event: OutboxEvent | LaunchOutboxEvent): Promise<string | null> {
@@ -279,15 +297,20 @@ function parseLaunch(value: unknown, index: number): LaunchItem | null {
 
   return {
     id,
+    taskId: readString(value, 'taskId', 'task_id') ?? '',
+    battleGroupId: readString(value, 'battleGroupId', 'battle_group_id') ?? '',
     orderNumber: readNumber(value, 'orderNumber', 'order_number') ?? index + 1,
     routeId: route ?? `№${index + 1}`,
     droneName,
     droneNumber: serial ?? String(droneNumber),
-    trackerNumber: tracker,
-    status: readLaunchStatus(value.status),
-    time: typeof value.time === 'string' ? value.time : null,
+    trackerNumber: tracker ?? '',
+    targetMgrs: readString(value, 'targetMgrs', 'aiming_point_mgrs') ?? '',
+    status: readLaunchStatus(value.status ?? value.execution_status),
+    time: typeof value.time === 'string' ? value.time : typeof value.actual_launch_time === 'string' ? value.actual_launch_time : null,
+    fixedTime: typeof value.fixedTime === 'string' ? value.fixedTime : typeof value.actual_launch_time === 'string' ? value.actual_launch_time : null,
     wasPostponed: value.wasPostponed === true || value.was_postponed === true,
-    description: typeof value.description === 'string' ? value.description : '',
+    description: typeof value.description === 'string' ? value.description : typeof value.comments === 'string' ? value.comments : '',
+    comment: typeof value.comment === 'string' ? value.comment : typeof value.comments === 'string' ? value.comments : '',
     audioBlob: typeof value.audioBlob === 'string' ? value.audioBlob : null,
   }
 }
@@ -312,9 +335,8 @@ function readNumber(record: Record<string, unknown>, ...keys: string[]): number 
 }
 
 function readLaunchStatus(value: unknown): LaunchStatus {
-  if (value === 'PENDING' || value === 'POSTPONED' || value === 'SUCCESS' || value === 'FAILED') {
-    return value
-  }
+  if (value === 'pending' || value === 'PENDING') return 'PENDING'
+  if (value === 'POSTPONED' || value === 'SUCCESS' || value === 'FAILED') return value
   return 'PENDING'
 }
 

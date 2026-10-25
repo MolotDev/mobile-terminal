@@ -2,7 +2,7 @@ import { UsersIcon } from 'lucide-react'
 import { useCrewStore } from '../stores/useCrewStore.ts'
 
 function crewLabel(login: string): string {
-  const name = login.trim().replace(/^crew_/i, '')
+  const name = login.trim()
   return name === '' ? '-' : name
 }
 

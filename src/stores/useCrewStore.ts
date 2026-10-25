@@ -17,7 +17,7 @@ import type {
 } from '../types/crew.ts'
 
 const DEFAULT_LOGIN = '1.1.1'
-const STORAGE_KEY = 'crew-terminal'
+const STORAGE_KEY = 'tactical-terminal-v3'
 let syncFollowUp = false
 
 const DEFAULT_MISSION: MissionPlan = {
@@ -29,56 +29,12 @@ const DEFAULT_MISSION: MissionPlan = {
 }
 
 const CHECKPOINT_DEFINITIONS = [
-  { id: 1, code: 'КТ-1', title: 'ЗІБРАЛИСЯ' },
-  { id: 2, code: 'КТ-2', title: 'ПРИБУЛИ' },
-  { id: 3, code: 'КТ-3', title: 'ГОТОВІ ДО ВИКОНАННЯ' },
-  { id: 4, code: 'КТ-4', title: 'ЗГОРНУЛИСЯ' },
-  { id: 5, code: 'КТ-5', title: 'ПОВЕРНУЛИСЯ' },
+  { id: 1, code: 'checkpoint_1', title: 'ЗІБРАЛИСЯ' },
+  { id: 2, code: 'checkpoint_2', title: 'ПРИБУЛИ' },
+  { id: 3, code: 'checkpoint_3', title: 'ГОТОВІ ДО ВИКОНАННЯ' },
+  { id: 4, code: 'checkpoint_4', title: 'ЗГОРНУЛИСЯ' },
+  { id: 5, code: 'checkpoint_5', title: 'ПОВЕРНУЛИСЯ' },
 ] as const
-
-function createLaunches(): LaunchItem[] {
-  return [
-    {
-      id: '1',
-      orderNumber: 1,
-      routeId: '№1',
-      droneName: 'Ворон',
-      droneNumber: '1',
-      trackerNumber: '1',
-      status: 'PENDING',
-      time: null,
-      wasPostponed: false,
-      description: '',
-      audioBlob: null,
-    },
-    {
-      id: '2',
-      orderNumber: 2,
-      routeId: '№2',
-      droneName: 'Ворон',
-      droneNumber: '2',
-      trackerNumber: '2',
-      status: 'PENDING',
-      time: null,
-      wasPostponed: false,
-      description: '',
-      audioBlob: null,
-    },
-    {
-      id: '3',
-      orderNumber: 3,
-      routeId: '№3',
-      droneName: 'Ворон',
-      droneNumber: '3',
-      trackerNumber: null,
-      status: 'PENDING',
-      time: null,
-      wasPostponed: false,
-      description: '',
-      audioBlob: null,
-    },
-  ]
-}
 
 function findActiveLaunch(launches: LaunchItem[]): LaunchItem | null {
   return (
@@ -189,23 +145,6 @@ function readAudio(audioBlob: Blob | null): Promise<string | null> {
   })
 }
 
-function mergeLaunches(current: LaunchItem[], incoming: LaunchItem[]): LaunchItem[] {
-  const byId = new Map(current.map((launch) => [launch.id, launch]))
-  return incoming.map((launch) => {
-    const existing = byId.get(launch.id)
-    if (!existing) return launch
-    return {
-      ...launch,
-      status: existing.status,
-      time: existing.time,
-      wasPostponed: existing.wasPostponed,
-      description: existing.description,
-      audioBlob: existing.audioBlob,
-      trackerNumber: existing.trackerNumber ?? launch.trackerNumber,
-    }
-  })
-}
-
 function createSessionState(): Pick<
   CrewState,
   | 'currentScreen'
@@ -217,15 +156,14 @@ function createSessionState(): Pick<
   | 'activeLaunch'
   | 'outbox'
 > {
-  const launches = createLaunches()
   return {
     currentScreen: 1,
     login: DEFAULT_LOGIN,
     syncTime: null,
     mission: DEFAULT_MISSION,
     checkpoints: createCheckpoints(),
-    launches,
-    activeLaunch: findActiveLaunch(launches),
+    launches: [],
+    activeLaunch: null,
     outbox: [],
   }
 }
@@ -236,6 +174,7 @@ export const useCrewStore = create<CrewState>()(
       ...createSessionState(),
       isOnline: typeof navigator === 'undefined' ? true : navigator.onLine,
       isSyncing: false,
+      isLoadingLaunches: false,
       shiftSummary: null,
       launchSyncNotice: null,
       setScreen: (screen: ScreenId) => set({ currentScreen: screen }),
@@ -302,22 +241,28 @@ export const useCrewStore = create<CrewState>()(
           }
         }
       },
-      loadPlanFromRemote: async () => {
-        const mission = await fetchActiveMission(get().login)
-        if (!mission || mission.launches.length === 0) return
-
-        set((state) => {
-          const launches = mergeLaunches(state.launches, mission.launches)
-          return {
-            mission: {
-              ...state.mission,
-              ...(mission.mgrs ? { mgrs: mission.mgrs } : {}),
-            },
-            launches,
-            activeLaunch: findActiveLaunch(launches),
-            syncTime: formatClock(new Date()),
+      fetchMissionLaunches: async (crewId: string) => {
+        set({ isLoadingLaunches: true })
+        try {
+          const mission = await fetchActiveMission(crewId)
+          if (!mission) {
+            set({ launches: [], activeLaunch: null, isLoadingLaunches: false })
+            return
           }
-        })
+          set((state) => ({
+            launches: mission.launches,
+            activeLaunch: findActiveLaunch(mission.launches),
+            isLoadingLaunches: false,
+            syncTime: formatClock(new Date()),
+            mission: mission.mgrs ? { ...state.mission, mgrs: mission.mgrs } : state.mission,
+          }))
+        } catch (error) {
+          console.error('[LOAD ERROR]:', error)
+          set({ launches: [], activeLaunch: null, isLoadingLaunches: false })
+        }
+      },
+      loadPlanFromRemote: async () => {
+        await get().fetchMissionLaunches(get().login)
       },
       submitCheckpoint: async (id, status, description, audioBlob) => {
         const active = get().checkpoints.find((point) => point.status === 'PENDING')
@@ -371,7 +316,7 @@ export const useCrewStore = create<CrewState>()(
           const launches = state.launches.map((launch) => {
             if (launch.id !== launchId) return launch
             const tracker = newTracker?.trim() ?? ''
-            return { ...launch, trackerNumber: tracker === '' ? null : tracker }
+            return { ...launch, trackerNumber: tracker }
           })
           return {
             launches,
@@ -384,9 +329,7 @@ export const useCrewStore = create<CrewState>()(
         if (!target) return
 
         const voice = await storeVoice(audioBlob)
-        const reportedAt = new Date()
-        const time = reportedAt.toISOString()
-        const actualLaunchTime = formatClock(reportedAt)
+        const actualLaunchTime = formatClock(new Date())
         const playback = voice.playback && voice.playback.length < 180000 ? voice.playback : null
 
         let queued = false
@@ -398,8 +341,10 @@ export const useCrewStore = create<CrewState>()(
             ...current,
             status,
             description,
+            comment: description,
             audioBlob: playback,
-            time: reported ? time : current.time,
+            time: reported ? actualLaunchTime : current.time,
+            fixedTime: reported ? actualLaunchTime : current.fixedTime,
             wasPostponed: status === 'POSTPONED' || current.wasPostponed,
           }
           const launches =
@@ -500,6 +445,7 @@ export const useCrewStore = create<CrewState>()(
         set({
           ...createSessionState(),
           isSyncing: false,
+          isLoadingLaunches: false,
           shiftSummary: null,
           launchSyncNotice: null,
         }),

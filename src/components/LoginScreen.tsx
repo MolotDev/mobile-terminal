@@ -7,7 +7,7 @@ export function LoginScreen() {
   const setLogin = useCrewStore((state) => state.setLogin)
   const setScreen = useCrewStore((state) => state.setScreen)
   const syncData = useCrewStore((state) => state.syncData)
-  const loadPlanFromRemote = useCrewStore((state) => state.loadPlanFromRemote)
+  const fetchMissionLaunches = useCrewStore((state) => state.fetchMissionLaunches)
   const [password, setPassword] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
   const canSubmit = login.trim() !== '' && password.trim() !== ''
@@ -22,9 +22,10 @@ export function LoginScreen() {
       setNotice('Вкажіть пароль')
       return
     }
-    setLogin(login.trim())
+    const crewId = login.trim()
+    setLogin(crewId)
     syncData()
-    void loadPlanFromRemote()
+    void fetchMissionLaunches(crewId)
     setNotice(null)
     setScreen(2)
   }
