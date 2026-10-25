@@ -443,11 +443,11 @@ export function LaunchesScreen() {
                     key={launch.id}
                     className="flex items-center border-b border-sbs-light/10 px-3 py-1.5"
                   >
-                    <span className="w-24 shrink-0 font-handjet text-xs text-sbs-light">
+                    <span className="w-24 shrink-0 font-handjet text-md text-sbs-light">
                       {formatFixation(launch.time)}
                     </span>
                     <span className="flex-1 font-fixel text-sm font-semibold text-sbs-white">
-                      №{launch.droneNumber} [{launch.trackerNumber ? '+T' : '-T'}]
+                      S.N-{launch.droneNumber} [{launch.trackerNumber ? ' +T ' : ' -T '}]
                     </span>
                     <LaunchSummaryStatus launch={launch} />
                   </li>
