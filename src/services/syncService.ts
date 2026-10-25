@@ -91,7 +91,7 @@ export function toLaunchItem(launch: Launch, index: number): LaunchItem | null {
     trackerNumber: launch.tracker_model_serial_number || '',
     targetMgrs: launch.aiming_point_mgrs,
     status: readLaunchStatus(launch.execution_status),
-    time: launch.actual_launch_time,
+    time: launch.reported_at ?? launch.actual_launch_time,
     fixedTime: launch.actual_launch_time,
     wasPostponed: false,
     description: launch.comments || '',

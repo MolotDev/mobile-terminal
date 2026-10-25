@@ -25,6 +25,13 @@ function resultTone(status: LastResult['status']): { text: string; className: st
 
 function formatFixation(time: string | null): string {
   if (!time) return '--.-- --:--'
+  const clock = /^(\d{2}):(\d{2})(?::\d{2})?$/.exec(time.trim())
+  if (clock) {
+    const now = new Date()
+    const day = String(now.getDate()).padStart(2, '0')
+    const month = String(now.getMonth() + 1).padStart(2, '0')
+    return `${day}.${month} ${clock[1]}:${clock[2]}`
+  }
   const date = new Date(time)
   if (Number.isNaN(date.getTime())) return '--.-- --:--'
   const day = String(date.getDate()).padStart(2, '0')
@@ -326,7 +333,7 @@ export function LaunchesScreen() {
                   <LiveClock className="shrink-0 font-handjet text-lg text-sbs-white" />
                 ) : (
                   <p className="shrink-0 font-handjet text-lg text-sbs-white">
-                    {card?.time ?? '--:--:--'}
+                    {card.fixedTime ?? card.time ?? '--:--:--'}
                   </p>
                 )}
               </div>

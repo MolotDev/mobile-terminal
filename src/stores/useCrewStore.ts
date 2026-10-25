@@ -355,7 +355,8 @@ export const useCrewStore = create<CrewState>()(
         if (!target) return
 
         const voice = await storeVoice(audioBlob)
-        const actualLaunchTime = formatClock(new Date())
+        const reportedAt = new Date()
+        const actualLaunchTime = formatClock(reportedAt)
         const playback = voice.playback && voice.playback.length < 180000 ? voice.playback : null
 
         let queued = false
@@ -369,7 +370,7 @@ export const useCrewStore = create<CrewState>()(
             description,
             comment: description,
             audioBlob: playback,
-            time: reported ? actualLaunchTime : current.time,
+            time: reported ? reportedAt.toISOString() : current.time,
             fixedTime: reported ? actualLaunchTime : current.fixedTime,
             wasPostponed: status === 'POSTPONED' || current.wasPostponed,
           }
