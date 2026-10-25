@@ -2,6 +2,7 @@ import { deleteAudio, getAudio } from '../lib/audioStore.ts'
 import { supabase } from '../lib/supabase.ts'
 import {
   DEFAULT_TASK_ID,
+  type CompletedCheckpoint,
   type CrewOutboxItem,
   type LaunchItem,
   type LaunchOutboxEvent,
@@ -76,6 +77,36 @@ export async function fetchActiveMission(crewId: string): Promise<ActiveMission 
   const mgrs = launches.find((launch) => launch.targetMgrs !== '')?.targetMgrs ?? null
 
   return { launches, mgrs }
+}
+
+export async function fetchCheckpointReports(
+  crewId: string,
+  taskId: string,
+): Promise<Record<string, CompletedCheckpoint> | null> {
+  if (!supabase) return {}
+
+  const { data, error } = await supabase
+    .from('checkpoint_reports')
+    .select('checkpoint_id, code, fixed_time, status')
+    .eq('battle_group_id', crewId)
+    .eq('task_id', taskId)
+
+  if (error || !Array.isArray(data)) {
+    console.error('[LOAD ERROR]:', error)
+    return null
+  }
+
+  const completed: Record<string, CompletedCheckpoint> = {}
+  for (const row of data) {
+    if (!isRecord(row)) continue
+    const checkpointId = readString(row, 'checkpoint_id') ?? readString(row, 'code')
+    if (!checkpointId) continue
+    completed[checkpointId] = {
+      fixedTime: typeof row.fixed_time === 'string' ? row.fixed_time : '',
+      status: typeof row.status === 'string' ? row.status : '',
+    }
+  }
+  return completed
 }
 
 export function toLaunchItem(launch: Launch, index: number): LaunchItem | null {

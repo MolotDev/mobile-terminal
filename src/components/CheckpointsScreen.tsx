@@ -1,12 +1,13 @@
 import { MicIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { Checkpoint, SubmittedStatus } from '../types/crew.ts'
+import type { Checkpoint, CompletedCheckpoint, SubmittedStatus } from '../types/crew.ts'
 import { useCrewStore } from '../stores/useCrewStore.ts'
 import { LiveClock } from './LiveClock.tsx'
 import { DraftVoiceNote, VoiceNote } from './VoiceNote.tsx'
 
 export function CheckpointsScreen() {
   const checkpoints = useCrewStore((state) => state.checkpoints)
+  const completedCheckpoints = useCrewStore((state) => state.completedCheckpoints)
   const currentScreen = useCrewStore((state) => state.currentScreen)
   const submitCheckpoint = useCrewStore((state) => state.submitCheckpoint)
   const closeShift = useCrewStore((state) => state.closeShift)
@@ -27,9 +28,11 @@ export function CheckpointsScreen() {
   const routePoints = checkpoints.filter((point) =>
     returning ? point.id >= 4 : point.id <= 3,
   )
-  const active = routePoints.find((point) => point.status === 'PENDING') ?? null
-  const allCompleted = routePoints.every((point) => point.status !== 'PENDING')
-  const crewReturned = routePoints.some((point) => point.id === 5 && point.status !== 'PENDING')
+  const isPassed = (point: Checkpoint) =>
+    point.status !== 'PENDING' || Boolean(completedCheckpoints[point.code])
+  const active = routePoints.find((point) => !isPassed(point)) ?? null
+  const allCompleted = routePoints.every((point) => isPassed(point))
+  const crewReturned = routePoints.some((point) => point.id === 5 && isPassed(point))
 
   useEffect(() => {
     aliveRef.current = true
@@ -111,7 +114,7 @@ export function CheckpointsScreen() {
   }
 
   async function handleSubmit(status: SubmittedStatus) {
-    if (!active) return
+    if (!active || completedCheckpoints[active.code]) return
     const hasProblemNote = description.trim() !== '' || recording || audioBlob !== null
     if (status === 'FAILED' && !hasProblemNote) {
       setFailHint(true)
@@ -153,7 +156,8 @@ export function CheckpointsScreen() {
           <CheckpointCard
             key={point.id}
             point={point}
-            locked={index > 0 && routePoints[index - 1]?.status === 'PENDING'}
+            done={completedCheckpoints[point.code] ?? null}
+            locked={index > 0 && routePoints[index - 1] !== undefined && !isPassed(routePoints[index - 1])}
             active={point.id === active?.id}
             description={description}
             recording={recording}
@@ -210,6 +214,7 @@ export function CheckpointsScreen() {
 
 function CheckpointCard({
   point,
+  done,
   locked,
   active,
   description,
@@ -222,6 +227,7 @@ function CheckpointCard({
   onSubmit,
 }: {
   point: Checkpoint
+  done: CompletedCheckpoint | null
   locked: boolean
   active: boolean
   description: string
@@ -236,27 +242,35 @@ function CheckpointCard({
   return (
     <li
       className={
-        active
-          ? 'hud-bracket-box border border-sbs-sky bg-sbs-dark p-3'
-          : 'bg-sbs-dark p-3 opacity-70'
+        done
+          ? 'border border-tactical-success/40 bg-sbs-dark p-3'
+          : active
+            ? 'hud-bracket-box border border-sbs-sky bg-sbs-dark p-3'
+            : 'bg-sbs-dark p-3 opacity-70'
       }
     >
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-bebas text-xl uppercase tracking-wider">{point.title}</h2>
-        {locked || point.status !== 'PENDING' ? (
+        {done || locked || point.status !== 'PENDING' ? (
           <p className="shrink-0 font-handjet text-lg text-sbs-white">
-            {locked ? '--:--:--' : (point.fixedTime ?? '--:--:--')}
+            {locked && !done ? '--:--:--' : (done?.fixedTime || point.fixedTime || '--:--:--')}
           </p>
         ) : (
           <LiveClock className="shrink-0 font-handjet text-lg text-sbs-white" />
         )}
       </div>
-      {locked ? (
+      {done ? (
+        <div className="mt-3 border border-tactical-success/40 bg-sbs-black px-3 py-3">
+          <p className="font-bebas text-lg tracking-wider text-tactical-success">✓ ВИКОНАНО</p>
+          <p className="font-handjet text-lg text-sbs-white">{done.fixedTime || '--:--:--'}</p>
+        </div>
+      ) : null}
+      {!done && locked ? (
         <p className="mt-3 text-sm text-sbs-light">
           🔒 Очікує проходження попередньої точки
         </p>
       ) : null}
-      {point.status !== 'PENDING' ? (
+      {!done && point.status !== 'PENDING' ? (
         <p
           className={`mt-2 text-sm ${
             point.status === 'SUCCESS' ? 'text-tactical-success' : 'text-tactical-warning'
@@ -265,10 +279,10 @@ function CheckpointCard({
           {point.status === 'SUCCESS' ? '✓ Успішно' : '✕ Неуспішно'}
         </p>
       ) : null}
-      {point.status !== 'PENDING' && point.description !== '' ? (
+      {!done && point.status !== 'PENDING' && point.description !== '' ? (
         <p className="mt-1 truncate font-fixel text-xs text-sbs-light/80">{point.description}</p>
       ) : null}
-      {active ? (
+      {active && !done ? (
         <div className="mt-3 flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <input

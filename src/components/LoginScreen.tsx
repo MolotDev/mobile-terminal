@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import { ResetMissionButton } from './ResetMissionButton.tsx'
 import { useCrewStore } from '../stores/useCrewStore.ts'
 
 export function LoginScreen() {
@@ -77,6 +78,9 @@ export function LoginScreen() {
       <p className="text-center font-handjet text-sm text-sbs-light">
         v.1.4.2 · Офлайн-модуль PWA активний
       </p>
+      <footer className="mt-auto flex justify-center pb-4 pt-8">
+        <ResetMissionButton />
+      </footer>
     </section>
   )
 }

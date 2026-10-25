@@ -1,10 +1,12 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { putAudio } from '../lib/audioStore.ts'
-import { fetchActiveMission, syncOutbox } from '../services/syncService.ts'
+import { supabase } from '../lib/supabase.ts'
+import { fetchActiveMission, fetchCheckpointReports, syncOutbox } from '../services/syncService.ts'
 import { DEFAULT_TASK_ID } from '../types/crew.ts'
 import type {
   Checkpoint,
+  CompletedCheckpoint,
   CrewOutboxItem,
   CrewState,
   LaunchItem,
@@ -18,7 +20,7 @@ import type {
 } from '../types/crew.ts'
 
 const DEFAULT_LOGIN = '1.1.1'
-const STORAGE_KEY = 'tactical-terminal-v3'
+const STORAGE_KEY = 'tactical-terminal-v4'
 let syncFollowUp = false
 
 const DEFAULT_MISSION: MissionPlan = {
@@ -61,6 +63,40 @@ function findActiveLaunch(launches: LaunchItem[]): LaunchItem | null {
     launches.find((launch) => launch.status === 'PENDING' || launch.status === 'POSTPONED') ??
     null
   )
+}
+
+function readReportStatus(status: string): 'SUCCESS' | 'FAILED' | null {
+  if (status === 'SUCCESS' || status === 'FAILED') return status
+  return null
+}
+
+function applyCompletedCheckpoints(
+  checkpoints: Checkpoint[],
+  completed: Record<string, CompletedCheckpoint>,
+): Checkpoint[] {
+  return checkpoints.map((point) => {
+    const report = completed[point.code]
+    const status = report ? readReportStatus(report.status) : null
+    if (!report || !status) return point
+    return {
+      ...point,
+      status,
+      fixedTime: report.fixedTime || point.fixedTime,
+      reportId: point.reportId ?? `remote:${point.code}`,
+    }
+  })
+}
+
+function mergeCompletedCheckpoints(
+  checkpoints: Checkpoint[],
+  remote: Record<string, CompletedCheckpoint>,
+): Record<string, CompletedCheckpoint> {
+  const merged = { ...remote }
+  for (const point of checkpoints) {
+    if (merged[point.code] || point.status === 'PENDING' || point.fixedTime === null) continue
+    merged[point.code] = { fixedTime: point.fixedTime, status: point.status }
+  }
+  return merged
 }
 
 function createCheckpoint(point: (typeof CHECKPOINT_DEFINITIONS)[number]): Checkpoint {
@@ -173,6 +209,7 @@ function createSessionState(): Pick<
   | 'syncTime'
   | 'mission'
   | 'checkpoints'
+  | 'completedCheckpoints'
   | 'launches'
   | 'activeLaunch'
   | 'outbox'
@@ -184,6 +221,7 @@ function createSessionState(): Pick<
     syncTime: null,
     mission: DEFAULT_MISSION,
     checkpoints: createCheckpoints(),
+    completedCheckpoints: {},
     launches: [],
     activeLaunch: null,
     outbox: [],
@@ -264,18 +302,30 @@ export const useCrewStore = create<CrewState>()(
       fetchMissionLaunches: async (crewId: string) => {
         set({ isLoadingLaunches: true })
         try {
-          const mission = await fetchActiveMission(crewId)
+          const knownTaskId = get().currentTaskId
+          const [mission, preliminaryReports] = await Promise.all([
+            fetchActiveMission(crewId),
+            knownTaskId ? fetchCheckpointReports(crewId, knownTaskId) : Promise.resolve(null),
+          ])
           if (!mission) {
             set({ launches: [], activeLaunch: null, isLoadingLaunches: false })
             return
           }
+          const activeTaskId = mission.launches[0]?.taskId || knownTaskId
+          const remoteReports =
+            activeTaskId && activeTaskId !== knownTaskId
+              ? await fetchCheckpointReports(crewId, activeTaskId)
+              : preliminaryReports
           set((state) => {
             const launches = keepLocalFacts(state.launches, mission.launches)
-            const loadedTaskId = mission.launches[0]?.taskId
+            const remote = remoteReports ?? state.completedCheckpoints
+            const checkpoints = applyCompletedCheckpoints(state.checkpoints, remote)
             return {
               launches,
               activeLaunch: findActiveLaunch(launches),
-              currentTaskId: loadedTaskId ? loadedTaskId : state.currentTaskId,
+              currentTaskId: activeTaskId || state.currentTaskId,
+              completedCheckpoints: mergeCompletedCheckpoints(checkpoints, remote),
+              checkpoints,
               isLoadingLaunches: false,
               syncTime: formatClock(new Date()),
               mission: mission.mgrs ? { ...state.mission, mgrs: mission.mgrs } : state.mission,
@@ -291,7 +341,7 @@ export const useCrewStore = create<CrewState>()(
       },
       submitCheckpoint: async (id, status, description, audioBlob) => {
         const active = get().checkpoints.find((point) => point.status === 'PENDING')
-        if (!active || active.id !== id) return
+        if (!active || active.id !== id || get().completedCheckpoints[active.code]) return
 
         const voice = await storeVoice(audioBlob)
         const fixedTime = formatClock(new Date())
@@ -332,6 +382,10 @@ export const useCrewStore = create<CrewState>()(
 
           return {
             checkpoints,
+            completedCheckpoints: {
+              ...state.completedCheckpoints,
+              [current.code]: { fixedTime, status },
+            },
             outbox: [...state.outbox, event],
           }
         })
@@ -471,6 +525,12 @@ export const useCrewStore = create<CrewState>()(
         const shiftSummary = await get().triggerSync()
         set({ currentScreen: 6, shiftSummary })
       },
+      resetMission: async () => {
+        if (!supabase) return
+        const crewId = get().login
+        const { error } = await supabase.rpc('reset_demo_mission', { p_crew_id: crewId })
+        if (error) throw error
+      },
       resetSession: () =>
         set({
           ...createSessionState(),
@@ -491,6 +551,7 @@ export const useCrewStore = create<CrewState>()(
         syncTime: state.syncTime,
         mission: state.mission,
         checkpoints: state.checkpoints,
+        completedCheckpoints: state.completedCheckpoints,
         launches: state.launches,
         shiftSummary: state.shiftSummary,
         launchSyncNotice: state.launchSyncNotice,
@@ -500,9 +561,15 @@ export const useCrewStore = create<CrewState>()(
           useCrewStore.getState().setOnlineStatus(navigator.onLine)
         }
         if (!state) return
+        const checkpoints = state.checkpoints
+          ? applyCompletedCheckpoints(
+              alignCheckpoints(state.checkpoints),
+              state.completedCheckpoints ?? {},
+            )
+          : undefined
         useCrewStore.setState({
           ...(state.launches ? { activeLaunch: findActiveLaunch(state.launches) } : {}),
-          ...(state.checkpoints ? { checkpoints: alignCheckpoints(state.checkpoints) } : {}),
+          ...(checkpoints ? { checkpoints } : {}),
         })
       },
     },

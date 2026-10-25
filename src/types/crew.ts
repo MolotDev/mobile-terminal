@@ -99,6 +99,11 @@ export type CrewOutboxItem =
   | LaunchesConfirmedOutboxEvent
   | ShiftClosedOutboxEvent
 
+export interface CompletedCheckpoint {
+  fixedTime: string
+  status: string
+}
+
 export interface MissionPlan {
   target: string
   address: string
@@ -118,6 +123,7 @@ export interface CrewState {
   syncTime: string | null
   mission: MissionPlan
   checkpoints: Checkpoint[]
+  completedCheckpoints: Record<string, CompletedCheckpoint>
   launches: LaunchItem[]
   activeLaunch: LaunchItem | null
   shiftSummary: ShiftSummary | null
@@ -144,5 +150,6 @@ export interface CrewState {
   ) => Promise<void>
   confirmLaunches: () => Promise<void>
   closeShift: () => Promise<void>
+  resetMission: () => Promise<void>
   resetSession: () => void
 }

@@ -209,6 +209,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+GRANT EXECUTE ON FUNCTION public.reset_demo_mission(TEXT, UUID) TO anon, authenticated;
+
 -- ========================================================
 -- 9. ПОЧАТКОВІ ДАНІ (SEED DATA)
 -- ========================================================
