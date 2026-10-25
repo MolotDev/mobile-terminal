@@ -1,15 +1,15 @@
 -- ========================================================
--- 1. СТВОРЕННЯ ДОВІДНИКІВ (MVP PLANNING)
+-- 1. ДОВІДНИКИ СИСТЕМИ (MVP PLANNING)
 -- ========================================================
 
--- Таблиця загонів
+-- Загони
 CREATE TABLE IF NOT EXISTS public.detachments (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Таблиця екіпажів (battle_groups)
+-- Екіпажі
 CREATE TABLE IF NOT EXISTS public.battle_groups (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS public.battle_groups (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Довідник контрольних точок
+-- Контрольні точки маршруту
 CREATE TABLE IF NOT EXISTS public.checkpoints (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -25,10 +25,10 @@ CREATE TABLE IF NOT EXISTS public.checkpoints (
 );
 
 -- ========================================================
--- 2. РОБОЧІ ТАБЛИЦІ (ПУСКИ ТА ЗВІТИ З ПОЛЯ)
+-- 2. ТАБЛИЦІ ПЛАНУВАННЯ ТА ЗВІТНОСТІ
 -- ========================================================
 
--- Таблиця пусків (структура точно відповідає createLaunchRecord)
+-- ПЛАН: Бойовий наряд на пуски
 CREATE TABLE IF NOT EXISTS public.launches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     task_id UUID NOT NULL,
@@ -56,9 +56,10 @@ CREATE TABLE IF NOT EXISTS public.launches (
     bda_result TEXT
 );
 
--- Таблиця звітів по КТ від терміналу
+-- ФАКТ: Доповіді по контрольних точках (маршрут і час завдання)
 CREATE TABLE IF NOT EXISTS public.checkpoint_reports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id UUID,
     battle_group_id TEXT NOT NULL REFERENCES public.battle_groups(id) ON DELETE CASCADE,
     checkpoint_id TEXT REFERENCES public.checkpoints(id) ON DELETE SET NULL,
     code TEXT NOT NULL,
@@ -70,14 +71,38 @@ CREATE TABLE IF NOT EXISTS public.checkpoint_reports (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ФАКТ: Звіти про результати пусків бортів
+CREATE TABLE IF NOT EXISTS public.launch_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    launch_id UUID NOT NULL REFERENCES public.launches(id) ON DELETE CASCADE,
+    task_id UUID NOT NULL,
+    battle_group_id TEXT NOT NULL REFERENCES public.battle_groups(id) ON DELETE CASCADE,
+    status TEXT NOT NULL,
+    actual_launch_time TEXT NOT NULL,
+    tracker_model_serial_number TEXT,
+    comments TEXT DEFAULT '',
+    reported_by_role TEXT NOT NULL DEFAULT 'CREW',
+    source_channel TEXT NOT NULL DEFAULT 'TERMINAL',
+    reported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ========================================================
--- 3. ТРИГЕРИ ТА ІНДЕКСИ
+-- 3. ІНДЕКСИ
 -- ========================================================
 
-CREATE INDEX IF NOT EXISTS idx_launches_battle_group ON public.launches(battle_group_id);
-CREATE INDEX IF NOT EXISTS idx_launches_task_id ON public.launches(task_id);
+CREATE INDEX IF NOT EXISTS idx_launches_bg ON public.launches(battle_group_id);
+CREATE INDEX IF NOT EXISTS idx_launches_task ON public.launches(task_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_reports_task ON public.checkpoint_reports(task_id);
 CREATE INDEX IF NOT EXISTS idx_checkpoint_reports_bg ON public.checkpoint_reports(battle_group_id);
+CREATE INDEX IF NOT EXISTS idx_launch_reports_launch ON public.launch_reports(launch_id);
+CREATE INDEX IF NOT EXISTS idx_launch_reports_task ON public.launch_reports(task_id);
 
+-- ========================================================
+-- 4. ТРИГЕРИ АВТОМАТИЗАЦІЇ
+-- ========================================================
+
+-- Оновлення updated_at для таблиці launches
 CREATE OR REPLACE FUNCTION public.set_current_timestamp_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -92,8 +117,32 @@ BEFORE UPDATE ON public.launches
 FOR EACH ROW
 EXECUTE FUNCTION public.set_current_timestamp_updated_at();
 
+-- Автоматична трансляція факту пуску в планову таблицю launches
+CREATE OR REPLACE FUNCTION public.sync_launch_report_to_plan()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE public.launches
+    SET 
+        execution_status = NEW.status,
+        actual_launch_time = NEW.actual_launch_time,
+        tracker_model_serial_number = COALESCE(NULLIF(NEW.tracker_model_serial_number, ''), tracker_model_serial_number),
+        comments = COALESCE(NEW.comments, comments),
+        reported_at = NEW.reported_at,
+        updated_at = NOW()
+    WHERE id = NEW.launch_id;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_sync_launch_report ON public.launch_reports;
+CREATE TRIGGER trg_sync_launch_report
+AFTER INSERT ON public.launch_reports
+FOR EACH ROW
+EXECUTE FUNCTION public.sync_launch_report_to_plan();
+
 -- ========================================================
--- 4. ПОЛІТИКИ ДОСТУПУ (RLS ДЛЯ РОЛІ anon)
+-- 5. ROW LEVEL SECURITY (RLS)
 -- ========================================================
 
 ALTER TABLE public.detachments ENABLE ROW LEVEL SECURITY;
@@ -101,33 +150,29 @@ ALTER TABLE public.battle_groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.checkpoints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.launches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.checkpoint_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.launch_reports ENABLE ROW LEVEL SECURITY;
 
--- Доступ до довідників на читання
-DROP POLICY IF EXISTS "Allow anon read detachments" ON public.detachments;
 CREATE POLICY "Allow anon read detachments" ON public.detachments FOR SELECT TO anon USING (true);
-
-DROP POLICY IF EXISTS "Allow anon read battle_groups" ON public.battle_groups;
 CREATE POLICY "Allow anon read battle_groups" ON public.battle_groups FOR SELECT TO anon USING (true);
-
-DROP POLICY IF EXISTS "Allow anon read checkpoints" ON public.checkpoints;
 CREATE POLICY "Allow anon read checkpoints" ON public.checkpoints FOR SELECT TO anon USING (true);
 
--- Доступ до пусків (читання наряду, оновлення статусу, додавання)
-DROP POLICY IF EXISTS "Allow anon select launches" ON public.launches;
 CREATE POLICY "Allow anon select launches" ON public.launches FOR SELECT TO anon USING (true);
-
-DROP POLICY IF EXISTS "Allow anon update launches" ON public.launches;
 CREATE POLICY "Allow anon update launches" ON public.launches FOR UPDATE TO anon USING (true) WITH CHECK (true);
-
-DROP POLICY IF EXISTS "Allow anon insert launches" ON public.launches;
 CREATE POLICY "Allow anon insert launches" ON public.launches FOR INSERT TO anon WITH CHECK (true);
 
--- Доступ до звітів контрольних точок
-DROP POLICY IF EXISTS "Allow anon all on checkpoint_reports" ON public.checkpoint_reports;
-CREATE POLICY "Allow anon all on checkpoint_reports" ON public.checkpoint_reports FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anon all checkpoint_reports" ON public.checkpoint_reports FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anon all launch_reports" ON public.launch_reports FOR ALL TO anon USING (true) WITH CHECK (true);
 
 -- ========================================================
--- 5. БАКЕТ СХОВИЩА ДЛЯ ГОЛОСОВИХ ЗВІТІВ
+-- 6. REALTIME ПУБЛІКАЦІЯ
+-- ========================================================
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.launches;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.checkpoint_reports;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.launch_reports;
+
+-- ========================================================
+-- 7. ХРАНИЛИЩЕ ДЛЯ ГОЛОСОВИХ ДОПОВІДЕЙ
 -- ========================================================
 
 INSERT INTO storage.buckets (id, name, public) 
@@ -141,17 +186,41 @@ USING (bucket_id = 'tactical-voice')
 WITH CHECK (bucket_id = 'tactical-voice');
 
 -- ========================================================
--- 6. НАПОВНЕННЯ ДАНИМИ З MVP PLANNING
+-- 8. RPC ФУНКЦІЯ ДЛЯ СКИДАННЯ ТЕСТУ
 -- ========================================================
 
--- Загони (DETACHMENT_REFS)
+CREATE OR REPLACE FUNCTION public.reset_demo_mission(
+    p_crew_id TEXT DEFAULT '1.1.1',
+    p_task_id UUID DEFAULT 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d'
+)
+RETURNS VOID AS $$
+BEGIN
+    DELETE FROM public.launch_reports WHERE battle_group_id = p_crew_id;
+    DELETE FROM public.checkpoint_reports WHERE battle_group_id = p_crew_id;
+
+    UPDATE public.launches
+    SET 
+        execution_status = 'pending',
+        actual_launch_time = NULL,
+        comments = '',
+        reported_at = NULL,
+        reported_at_time = NULL
+    WHERE battle_group_id = p_crew_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ========================================================
+-- 9. ПОЧАТКОВІ ДАНІ (SEED DATA)
+-- ========================================================
+
+-- Загони
 INSERT INTO public.detachments (id, name) VALUES 
     ('detachment_1', '1_Загін'),
     ('detachment_2', '2_Загін'),
     ('detachment_3', '3_Загін')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
 
--- Екіпажі (CREWS)
+-- Екіпажі
 INSERT INTO public.battle_groups (id, name, organization_id) VALUES 
     ('1.1.1', '1.1.1', 'detachment_1'),
     ('1.1.2', '1.1.2', 'detachment_1'),
@@ -164,7 +233,7 @@ INSERT INTO public.battle_groups (id, name, organization_id) VALUES
     ('3.1.3', '3.1.3', 'detachment_3')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, organization_id = EXCLUDED.organization_id;
 
--- Контрольні точки (CHECKPOINTS)
+-- Контрольні точки
 INSERT INTO public.checkpoints (id, name) VALUES 
     ('checkpoint_1', 'КТ 1'),
     ('checkpoint_2', 'КТ 2'),
@@ -173,10 +242,7 @@ INSERT INTO public.checkpoints (id, name) VALUES
     ('checkpoint_5', 'КТ 5')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
 
--- ========================================================
--- 7. ТЕСТОВИЙ БОЙОВИЙ НАРЯД ДЛЯ ЕКІПАЖУ 1.1.1
--- ========================================================
-
+-- Бойовий наряд для екіпажу 1.1.1
 DELETE FROM public.launches WHERE battle_group_id = '1.1.1';
 
 INSERT INTO public.launches (

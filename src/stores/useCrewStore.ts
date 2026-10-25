@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { putAudio } from '../lib/audioStore.ts'
 import { fetchActiveMission, syncOutbox } from '../services/syncService.ts'
+import { DEFAULT_TASK_ID } from '../types/crew.ts'
 import type {
   Checkpoint,
   CrewOutboxItem,
@@ -35,6 +36,25 @@ const CHECKPOINT_DEFINITIONS = [
   { id: 4, code: 'checkpoint_4', title: 'ЗГОРНУЛИСЯ' },
   { id: 5, code: 'checkpoint_5', title: 'ПОВЕРНУЛИСЯ' },
 ] as const
+
+function keepLocalFacts(current: LaunchItem[], incoming: LaunchItem[]): LaunchItem[] {
+  const byId = new Map(current.map((launch) => [launch.id, launch]))
+  return incoming.map((launch) => {
+    const existing = byId.get(launch.id)
+    if (!existing || existing.status === 'PENDING') return launch
+    return {
+      ...launch,
+      status: existing.status,
+      time: existing.time,
+      fixedTime: existing.fixedTime ?? launch.fixedTime,
+      wasPostponed: existing.wasPostponed,
+      description: existing.description,
+      comment: existing.comment,
+      trackerNumber: existing.trackerNumber || launch.trackerNumber,
+      audioBlob: existing.audioBlob,
+    }
+  })
+}
 
 function findActiveLaunch(launches: LaunchItem[]): LaunchItem | null {
   return (
@@ -149,6 +169,7 @@ function createSessionState(): Pick<
   CrewState,
   | 'currentScreen'
   | 'login'
+  | 'currentTaskId'
   | 'syncTime'
   | 'mission'
   | 'checkpoints'
@@ -159,6 +180,7 @@ function createSessionState(): Pick<
   return {
     currentScreen: 1,
     login: DEFAULT_LOGIN,
+    currentTaskId: DEFAULT_TASK_ID,
     syncTime: null,
     mission: DEFAULT_MISSION,
     checkpoints: createCheckpoints(),
@@ -249,13 +271,18 @@ export const useCrewStore = create<CrewState>()(
             set({ launches: [], activeLaunch: null, isLoadingLaunches: false })
             return
           }
-          set((state) => ({
-            launches: mission.launches,
-            activeLaunch: findActiveLaunch(mission.launches),
-            isLoadingLaunches: false,
-            syncTime: formatClock(new Date()),
-            mission: mission.mgrs ? { ...state.mission, mgrs: mission.mgrs } : state.mission,
-          }))
+          set((state) => {
+            const launches = keepLocalFacts(state.launches, mission.launches)
+            const loadedTaskId = mission.launches[0]?.taskId
+            return {
+              launches,
+              activeLaunch: findActiveLaunch(launches),
+              currentTaskId: loadedTaskId ? loadedTaskId : state.currentTaskId,
+              isLoadingLaunches: false,
+              syncTime: formatClock(new Date()),
+              mission: mission.mgrs ? { ...state.mission, mgrs: mission.mgrs } : state.mission,
+            }
+          })
         } catch (error) {
           console.error('[LOAD ERROR]:', error)
           set({ launches: [], activeLaunch: null, isLoadingLaunches: false })
@@ -294,6 +321,7 @@ export const useCrewStore = create<CrewState>()(
           const event: OutboxEvent = {
             id: reportId,
             login: state.login,
+            taskId: state.currentTaskId || DEFAULT_TASK_ID,
             checkpointId: current.id,
             code: current.code,
             title: current.title,
@@ -362,6 +390,8 @@ export const useCrewStore = create<CrewState>()(
           const event: LaunchOutboxEvent = {
             id: crypto.randomUUID(),
             login: state.login,
+            taskId: current.taskId || state.currentTaskId || DEFAULT_TASK_ID,
+            battleGroupId: current.battleGroupId || state.login,
             launchId: current.id,
             orderNumber: current.orderNumber,
             routeId: current.routeId,
@@ -406,6 +436,7 @@ export const useCrewStore = create<CrewState>()(
             const event: OutboxEvent = {
               id: crypto.randomUUID(),
               login: state.login,
+              taskId: state.currentTaskId || DEFAULT_TASK_ID,
               checkpointId: point.id,
               code: point.code,
               title: point.title,
@@ -457,6 +488,7 @@ export const useCrewStore = create<CrewState>()(
         currentScreen: state.currentScreen,
         outbox: state.outbox,
         login: state.login,
+        currentTaskId: state.currentTaskId,
         syncTime: state.syncTime,
         mission: state.mission,
         checkpoints: state.checkpoints,

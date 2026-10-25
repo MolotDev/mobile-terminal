@@ -27,6 +27,8 @@ export interface ShiftSummary {
 
 export type LaunchSyncNotice = 'synced' | 'queued'
 
+export const DEFAULT_TASK_ID = 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d'
+
 export interface LaunchItem {
   id: string
   taskId: string
@@ -49,6 +51,7 @@ export interface LaunchItem {
 export interface OutboxEvent {
   id: string
   login: string
+  taskId: string
   checkpointId: number
   code: string
   status: SubmittedStatus
@@ -62,6 +65,8 @@ export interface OutboxEvent {
 export interface LaunchOutboxEvent {
   id: string
   login: string
+  taskId: string
+  battleGroupId: string
   launchId: string
   orderNumber: number
   routeId: string
@@ -109,6 +114,7 @@ export interface CrewState {
   isLoadingLaunches: boolean
   outbox: CrewOutboxItem[]
   login: string
+  currentTaskId: string | null
   syncTime: string | null
   mission: MissionPlan
   checkpoints: Checkpoint[]

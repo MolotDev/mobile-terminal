@@ -1,6 +1,13 @@
 import { deleteAudio, getAudio } from '../lib/audioStore.ts'
 import { supabase } from '../lib/supabase.ts'
-import type { CrewOutboxItem, LaunchItem, LaunchOutboxEvent, LaunchStatus, OutboxEvent } from '../types/crew.ts'
+import {
+  DEFAULT_TASK_ID,
+  type CrewOutboxItem,
+  type LaunchItem,
+  type LaunchOutboxEvent,
+  type LaunchStatus,
+  type OutboxEvent,
+} from '../types/crew.ts'
 import type { Launch } from '../types/mission.ts'
 
 const VOICE_BUCKET = 'tactical-voice'
@@ -125,26 +132,41 @@ async function deliverEvent(event: CrewOutboxItem): Promise<boolean> {
   if (isCheckpointReport(event)) {
     const audioUrl = await publishedAudioUrl(event).catch(() => null)
 
-    const { error } = await supabase.from('checkpoint_reports').insert({
-      id: event.id,
-      battle_group_id: event.login,
-      checkpoint_id: event.code,
-      code: event.code,
-      title: event.title || event.code,
-      status: event.status,
-      fixed_time: event.fixedTime,
-      description: event.description,
-      audio_url: audioUrl,
-    })
-
-    if (error && error.code !== '23505') return false
+    try {
+      await insertCheckpointReport({
+        id: event.id,
+        task_id: event.taskId || DEFAULT_TASK_ID,
+        battle_group_id: event.login,
+        checkpoint_id: event.code,
+        code: event.code,
+        title: event.title || event.code,
+        status: event.status,
+        fixed_time: event.fixedTime,
+        description: event.description,
+        audio_url: audioUrl,
+      })
+    } catch (error) {
+      if (!isUniqueViolation(error)) return false
+    }
     await clearStoredAudio(event.audioKey)
     return true
   }
 
   if (isLaunchReport(event)) {
-    const saved = await updateLaunchReport(event)
-    if (!saved) return false
+    try {
+      await insertLaunchReport({
+        id: event.id,
+        launch_id: event.launchId,
+        task_id: event.taskId || DEFAULT_TASK_ID,
+        battle_group_id: event.battleGroupId || event.login,
+        status: event.status,
+        actual_launch_time: event.time,
+        comments: event.description,
+        tracker_model_serial_number: event.trackerNumber,
+      })
+    } catch (error) {
+      if (!isUniqueViolation(error)) return false
+    }
     await clearStoredAudio(event.audioKey)
     return true
   }
@@ -156,44 +178,84 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 }
 
-export async function syncLaunchStatus(
-  launchId: string,
-  payload: {
-    status: 'SUCCESS' | 'FAILED'
-    fixedTime: string
-    comment: string
-    trackerNumber?: string
-  },
-): Promise<{ success: boolean; error: unknown }> {
-  if (!supabase) return { success: false, error: null }
-  if (!isUuid(launchId)) {
-    console.error('Invalid launch ID for update:', launchId)
-    return { success: false, error: null }
+export async function insertLaunchReport(payload: {
+  id?: string
+  launch_id: string
+  task_id: string
+  battle_group_id: string
+  status: 'SUCCESS' | 'FAILED'
+  actual_launch_time: string
+  comments?: string
+  tracker_model_serial_number?: string | null
+  reported_by_role?: 'CREW'
+  source_channel?: 'TERMINAL'
+}) {
+  if (!supabase) throw new Error('Supabase client is unavailable')
+  if (!isUuid(payload.launch_id)) {
+    console.error('Invalid launch ID for update:', payload.launch_id)
+    throw new Error('Invalid launch ID')
   }
 
   const { data, error } = await supabase
-    .from('launches')
-    .update({
-      execution_status: payload.status,
-      actual_launch_time: payload.fixedTime,
-      comments: payload.comment || '',
-      tracker_model_serial_number: payload.trackerNumber || null,
-      reported_at: new Date().toISOString(),
-    })
-    .eq('id', launchId)
+    .from('launch_reports')
+    .insert([
+      {
+        ...(payload.id ? { id: payload.id } : {}),
+        launch_id: payload.launch_id,
+        task_id: payload.task_id,
+        battle_group_id: payload.battle_group_id,
+        status: payload.status,
+        actual_launch_time: payload.actual_launch_time,
+        comments: payload.comments || '',
+        tracker_model_serial_number: payload.tracker_model_serial_number || null,
+        reported_by_role: 'CREW',
+        source_channel: 'TERMINAL',
+        reported_at: new Date().toISOString(),
+      },
+    ])
     .select()
 
-  return { success: !error && Array.isArray(data) && data.length > 0, error }
+  if (error) throw error
+  return data[0]
 }
 
-async function updateLaunchReport(event: LaunchOutboxEvent): Promise<boolean> {
-  const result = await syncLaunchStatus(event.launchId, {
-    status: event.status,
-    fixedTime: event.time,
-    comment: event.description,
-    trackerNumber: event.trackerNumber ?? undefined,
-  })
-  return result.success
+export async function insertCheckpointReport(payload: {
+  id: string
+  task_id: string
+  battle_group_id: string
+  checkpoint_id: string
+  code: string
+  title: string
+  status: string
+  fixed_time: string
+  description: string
+  audio_url: string | null
+}) {
+  if (!supabase) throw new Error('Supabase client is unavailable')
+  const { data, error } = await supabase
+    .from('checkpoint_reports')
+    .insert([
+      {
+        id: payload.id,
+        task_id: payload.task_id,
+        battle_group_id: payload.battle_group_id,
+        checkpoint_id: payload.checkpoint_id,
+        code: payload.code,
+        title: payload.title,
+        status: payload.status,
+        fixed_time: payload.fixed_time,
+        description: payload.description,
+        audio_url: payload.audio_url,
+      },
+    ])
+    .select()
+
+  if (error) throw error
+  return data[0]
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === '23505'
 }
 
 async function publishedAudioUrl(event: OutboxEvent | LaunchOutboxEvent): Promise<string | null> {

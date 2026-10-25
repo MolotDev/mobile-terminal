@@ -17,7 +17,7 @@ export function LaunchPlanScreen() {
   const launches = useCrewStore((state) => state.launches)
   const trackerCount = launches.filter((launch) => launch.trackerNumber).length
   const assets = summarizeAssets(launches)
-  const routes = launches.map((launch) => launch.routeId).join(', ')
+  const routes = Array.from(new Set(launches.map((launch) => launch.routeId.replace("№","")))).join(', ')
 
   useEffect(() => {
     if (syncTime === null) syncData()
@@ -50,11 +50,11 @@ export function LaunchPlanScreen() {
         <ul className="mt-4 flex flex-col gap-3 text-sm">
           <TargetRow name={mission.target} mgrs={mission.mgrs} address={mission.address} />
           <ReceptionRow label={mission.receptionLabel} name={mission.reception} />
-          <PlanRow icon={Plane}>Засоби: «{assets}».</PlanRow>
+          <PlanRow icon={Plane}>Засоби: {assets}.</PlanRow>
           <PlanRow icon={Radar}>
-            Трекери: «{trackerCount} / {launches.length}».
+            Трекери: {trackerCount} / {launches.length}.
           </PlanRow>
-          <PlanRow icon={Compass}>Маршрути: «{routes}».</PlanRow>
+          <PlanRow icon={Compass}>Маршрути №: {routes}.</PlanRow>
         </ul>
       </article>
       <div className="flex items-center justify-between gap-2 border border-sbs-light/20 bg-sbs-dark px-3 py-2 text-sm text-sbs-light">
