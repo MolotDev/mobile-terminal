@@ -188,12 +188,14 @@ export async function insertLaunchReport(payload: {
   launch_id: string
   task_id: string
   battle_group_id: string
-  status: 'SUCCESS' | 'FAILED'
+  status: 'SUCCESS' | 'FAILED' | 'POSTPONED'
   actual_launch_time: string
   comments?: string
   tracker_model_serial_number?: string | null
   reported_by_role?: 'CREW'
   source_channel?: 'TERMINAL'
+  photo_url?: string | null
+  audio_url?: string | null
 }) {
   if (!supabase) throw new Error('Supabase client is unavailable')
   if (!isUuid(payload.launch_id)) {
@@ -203,7 +205,7 @@ export async function insertLaunchReport(payload: {
 
   const { data, error } = await supabase
     .from('launch_reports')
-    .insert([
+    .upsert(
       {
         ...(payload.id ? { id: payload.id } : {}),
         launch_id: payload.launch_id,
@@ -213,11 +215,14 @@ export async function insertLaunchReport(payload: {
         actual_launch_time: payload.actual_launch_time,
         comments: payload.comments || '',
         tracker_model_serial_number: payload.tracker_model_serial_number || null,
+        photo_url: payload.photo_url || null,
+        audio_url: payload.audio_url || null,
         reported_by_role: 'CREW',
         source_channel: 'TERMINAL',
         reported_at: new Date().toISOString(),
       },
-    ])
+      { onConflict: 'launch_id' }
+    )
     .select()
 
   if (error) throw error
